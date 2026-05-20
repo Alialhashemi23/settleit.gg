@@ -31,11 +31,11 @@ Goal: full game loop, both question modes
 ## Phase 3 — Weekend Session 2 (2–3 hrs) 🎨
 Goal: looks good, feels good on mobile
 
-- [ ] Mobile-first player UI polish — big tap targets, clean layout
-- [ ] Host screen layout — question display + live results side by side
-- [ ] Animations — vote bars animate, answers slide in
-- [ ] Room code display — big and readable on host screen for people to type
-- [ ] Error states — room not found, room full, disconnected
+- [x] Mobile-first player UI polish — big tap targets, clean layout
+- [x] Host screen layout — question display + live results side by side
+- [x] Animations — vote bars animate, answers slide in
+- [x] Room code display — big and readable on host screen for people to type
+- [x] Error states — room not found, room full, disconnected
 
 ---
 
