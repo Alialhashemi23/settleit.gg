@@ -6,7 +6,7 @@
   import { connect } from "$lib/socket";
   import {
     players, currentQuestion, voteCounts, freetextResponses,
-    questionEnded, hostDisconnected, roomEnded, resetQuestionState,
+    hasVoted, questionEnded, hostDisconnected, roomEnded, resetQuestionState,
     questionHistory, gameMode, myPlayerId, turnOrder, activePlayerId,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
@@ -19,6 +19,9 @@
   let showHistory = $state(false);
   let showReveal = $state(false);
   let revealTimeout: ReturnType<typeof setTimeout> | null = null;
+  let hostSelectedOption: string | null = $state(null);
+  let hostFreetextInput = $state("");
+  let hostSubmitted = $state(false);
 
   let totalPlayers = $derived($players.length);
   let totalVotes = $derived(Object.values($voteCounts).reduce((a, b) => a + b, 0));
@@ -56,6 +59,9 @@
       freetextResponses.set([]);
       questionEnded.set(false);
       showPicker = false;
+      hostSelectedOption = null;
+      hostFreetextInput = "";
+      hostSubmitted = false;
     });
     socket.on("response:update", ({ counts, responses }: any) => {
       if (counts && Object.keys(counts).length) voteCounts.set(counts);
@@ -102,6 +108,22 @@
   function nextQuestion() {
     socket.emit("question:next");
     resetQuestionState();
+    hostSelectedOption = null;
+    hostFreetextInput = "";
+    hostSubmitted = false;
+  }
+
+  function hostVote(option: string) {
+    if ($hasVoted || !$currentQuestion) return;
+    hostSelectedOption = option;
+    hasVoted.set(true);
+    socket.emit("response:submit", { questionId: $currentQuestion.id, value: option });
+  }
+
+  function hostSubmitFreetext() {
+    if (hostSubmitted || !hostFreetextInput.trim() || !$currentQuestion) return;
+    hostSubmitted = true;
+    socket.emit("response:submit", { questionId: $currentQuestion.id, value: hostFreetextInput.trim() });
   }
 
   function endRoom() {
@@ -220,6 +242,40 @@
             </div>
             <h2>{$currentQuestion.prompt}</h2>
             <p class="vote-tally">{totalVotes} / {totalPlayers} responded</p>
+
+            {#if $currentQuestion.type === "vote"}
+              {#if !$hasVoted}
+                <div class="host-answer-section">
+                  <p class="host-answer-label">Your vote</p>
+                  <div class="host-options">
+                    {#each ($currentQuestion.options ?? []) as option}
+                      <button class="host-option-btn" onclick={() => hostVote(option)}>{option}</button>
+                    {/each}
+                  </div>
+                </div>
+              {:else}
+                <p class="host-voted">Voted: <strong>{hostSelectedOption}</strong></p>
+              {/if}
+            {:else}
+              {#if !hostSubmitted}
+                <div class="host-answer-section">
+                  <p class="host-answer-label">Your answer</p>
+                  <div class="host-freetext">
+                    <input
+                      type="text"
+                      bind:value={hostFreetextInput}
+                      placeholder="Type your answer..."
+                      maxlength="300"
+                      onkeydown={(e) => { if (e.key === 'Enter') hostSubmitFreetext(); }}
+                    />
+                    <button class="btn-sm" onclick={hostSubmitFreetext} disabled={!hostFreetextInput.trim()}>Send</button>
+                  </div>
+                </div>
+              {:else}
+                <p class="host-voted">Answered!</p>
+              {/if}
+            {/if}
+
             <button class="btn-primary" onclick={nextQuestion}>Next Question</button>
           </div>
 
@@ -423,6 +479,58 @@
   .question-type-badge.freetext { background: #1a1a3a; color: #7d9fff; }
 
   .vote-tally { color: #888; margin: 0; }
+
+  .host-answer-section { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .host-answer-label { font-size: 0.75rem; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.06em; margin: 0; }
+
+  .host-options { display: flex; flex-direction: column; gap: 0.4rem; }
+
+  .host-option-btn {
+    padding: 0.6rem 0.9rem;
+    border-radius: 0.5rem;
+    border: 1px solid #333;
+    background: #1a1a1a;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .host-option-btn:hover { border-color: #ff4d00; background: #1f0d00; }
+
+  .host-freetext { display: flex; gap: 0.5rem; }
+
+  .host-freetext input {
+    flex: 1;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid #333;
+    background: #1a1a1a;
+    color: #fff;
+    font-size: 0.875rem;
+    outline: none;
+  }
+
+  .host-freetext input:focus { border-color: #ff4d00; }
+
+  .btn-sm {
+    padding: 0.6rem 0.9rem;
+    border-radius: 0.5rem;
+    border: none;
+    background: #ff4d00;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .host-voted { color: #888; font-size: 0.875rem; margin: 0; }
 
   .bars { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem; }
 

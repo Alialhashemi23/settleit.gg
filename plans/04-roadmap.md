@@ -42,18 +42,19 @@ Goal: looks good, feels good on mobile
 ## Phase 4 — Player Turns Mode (2–3 hrs) 🎲
 Goal: question asking rotates through all players, Skribbl.io style
 
-- [ ] Add `mode` field to room creation — "Host Picks" (default) vs "Player Turns"
-- [ ] Backend: add `mode`, `turn_order`, `turn_index` columns to rooms table
-- [ ] Backend: `game:start` event — randomises player order, stores in `turn_order`, broadcasts `game:started` with ordered player list
-- [ ] Backend: gate `question:ask` / `question:next` on active player in player-turns mode (derive from `turn_order[turn_index]`)
-- [ ] Backend: on `question:next` in player-turns mode, increment `turn_index` (wrap around), emit `turn:changed`
-- [ ] Backend: skip disconnected players on their turn, auto-advance
-- [ ] Frontend: room creation UI — add mode toggle ("Host Picks" / "Player Turns")
-- [ ] Frontend: host lobby in player-turns mode — show "Start Game" button instead of "Ask a Question"
-- [ ] Frontend: brief turn order reveal animation after game starts
-- [ ] Frontend: active player view — when it's your turn, show the question picker on your device
-- [ ] Frontend: waiting player view — show "It's [Player]'s turn to ask..." with turn order visible
-- [ ] Frontend: host view — show turn order sidebar, can still advance/end at any time
+- [x] Add `mode` field to room creation — "Host Picks" (default) vs "Player Turns"
+- [x] Backend: add `mode`, `turn_order`, `turn_index` columns to rooms table
+- [x] Backend: `game:start` event — randomises player order, stores in `turn_order`, broadcasts `game:started` with ordered player list
+- [x] Backend: gate `question:ask` / `question:next` on active player in player-turns mode (derive from `turn_order[turn_index]`)
+- [x] Backend: on `question:next` in player-turns mode, increment `turn_index` (wrap around), emit `turn:changed`
+- [x] Backend: skip disconnected players on their turn, auto-advance
+- [x] Frontend: room creation UI — add mode toggle ("Host Picks" / "Player Turns") with hint text
+- [x] Frontend: host lobby in player-turns mode — show "Start Game" button instead of "Ask a Question"
+- [x] Frontend: brief turn order reveal animation after game starts (2.5s overlay, highlights current user)
+- [x] Frontend: active player view — when it's your turn, show the question picker on your device
+- [x] Frontend: waiting player view — show "It's [Player]'s turn to ask..." with active player highlighted
+- [x] Frontend: host view — turn badge in header, active player highlighted in player list
+- [x] Bugfix: host can now vote/answer questions they didn't ask (was stuck at 1 remaining)
 
 ---
 
