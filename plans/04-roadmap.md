@@ -20,11 +20,11 @@ Goal: real-time core working in two browser tabs
 ## Phase 2 — Weekend Session 1 (2–3 hrs) 🔥
 Goal: full game loop, both question modes
 
-- [ ] Free text mode — players submit answers, appear live on host screen
-- [ ] Question history — host can see previous questions/results in session
-- [ ] Preset question packs — Gaming, Anime, Wildcards (JSON files)
-- [ ] Host question picker UI — browse packs or type custom
-- [ ] Room end flow — session summary screen
+- [x] Free text mode — players submit answers, appear live on host screen
+- [x] Question history — host can see previous questions/results in session
+- [x] Preset question packs — Gaming, Anime, Wildcards (JSON files)
+- [x] Host question picker UI — browse packs or type custom
+- [x] Room end flow — session summary screen
 
 ---
 
