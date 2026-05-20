@@ -8,6 +8,9 @@
 | id | TEXT PK | short code e.g. `FIRE-4829` |
 | host_socket_id | TEXT | current host connection |
 | status | TEXT | `lobby`, `question`, `results` |
+| mode | TEXT | `host-picks` (default) or `player-turns` |
+| turn_order | TEXT | JSON array of player IDs, null in host-picks mode |
+| turn_index | INTEGER | index into turn_order for current active player, null in host-picks mode |
 | created_at | INTEGER | unix timestamp |
 | last_active | INTEGER | unix timestamp, used for cleanup |
 
@@ -43,12 +46,20 @@
 
 ## Host Authority
 
-The server must check `socket.id === room.host_socket_id` before processing these events:
-- `question:ask`
-- `question:next`
+The server must check `socket.id === room.host_socket_id` before processing these events in all modes:
+- `game:start`
 - `room:end`
 
-If the check fails, emit `error` with `{ message: 'not_authorized' }` back to that socket. Never trust the client to self-identify as host.
+In **host-picks** mode, also gate on host socket ID:
+- `question:ask`
+- `question:next`
+
+In **player-turns** mode, `question:ask` and `question:next` are gated on the **active player** instead:
+- Derive active player ID from `turn_order[turn_index]`
+- Check that `socket.data.playerId === activePlayerId`
+- Host can still call `question:next` as an override (e.g. to skip a stuck turn)
+
+If any check fails, emit `error` with `{ message: 'not_authorized' }` back to that socket. Never trust the client to self-identify as host or active player.
 
 ---
 
@@ -71,23 +82,27 @@ Add `host_reconnect_deadline` (INTEGER, unix timestamp) — set when host discon
 
 | event | payload | description |
 |---|---|---|
-| `room:create` | `{ nickname }` | host creates a room |
+| `room:create` | `{ nickname, mode }` | host creates a room; mode is `host-picks` or `player-turns` |
 | `room:join` | `{ roomCode, nickname }` | player joins existing room |
-| `question:ask` | `{ type, prompt, options? }` | host pushes a question |
+| `game:start` | `{}` | host starts the game in player-turns mode; randomises turn order |
+| `question:ask` | `{ type, prompt, options? }` | host (host-picks) or active player (player-turns) pushes a question |
 | `response:submit` | `{ questionId, value }` | player submits vote or text |
-| `question:next` | `{}` | host ends current question |
+| `question:next` | `{}` | host or active player ends current question; advances turn in player-turns mode |
 | `room:rejoin` | `{ roomCode, nickname }` | host attempts to reclaim session |
+| `room:end` | `{}` | host ends the session |
 
 ### Server → Client
 
 | event | payload | description |
 |---|---|---|
-| `room:created` | `{ roomCode }` | confirms room creation, sends code |
-| `room:joined` | `{ roomCode, players }` | confirms join, sends player list |
+| `room:created` | `{ roomCode, mode }` | confirms room creation, sends code and mode |
+| `room:joined` | `{ roomCode, players, mode }` | confirms join, sends player list and mode |
 | `room:updated` | `{ players }` | player joined or left |
+| `game:started` | `{ turnOrder }` | broadcast when host starts game; turnOrder is ordered array of `{ id, nickname }` |
+| `turn:changed` | `{ activePlayerId, activeNickname, turnIndex }` | broadcast when turn advances to next player |
 | `question:new` | `{ question }` | new question pushed to all players |
 | `response:update` | `{ counts, responses }` | live update as answers come in |
-| `question:ended` | `{ final counts/responses }` | host ended the question |
+| `question:ended` | `{ final counts/responses }` | question ended, results finalised |
 | `room:ended` | `{}` | session over |
 | `host:disconnected` | `{ deadline }` | host dropped, reconnect window started |
 | `error` | `{ message }` | something went wrong |

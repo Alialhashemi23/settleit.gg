@@ -50,6 +50,23 @@ Goal: publicly accessible URL
 
 ---
 
+## Phase 5 — Player Turns Mode 🎲
+Goal: question asking rotates through all players, Skribbl.io style
+
+- [ ] Add `mode` field to room creation — "Host Picks" (default) vs "Player Turns"
+- [ ] Backend: add `mode`, `turn_order`, `turn_index` columns to rooms table
+- [ ] Backend: `game:start` event — randomises player order, stores in `turn_order`, broadcasts `game:started` with ordered player list
+- [ ] Backend: gate `question:ask` / `question:next` on active player in player-turns mode (derive from `turn_order[turn_index]`)
+- [ ] Backend: on `question:next` in player-turns mode, increment `turn_index` (wrap around), emit `turn:changed`
+- [ ] Frontend: room creation UI — add mode toggle ("Host Picks" / "Player Turns")
+- [ ] Frontend: host lobby in player-turns mode — show "Start Game" button instead of "Ask a Question"
+- [ ] Frontend: brief turn order reveal animation after game starts
+- [ ] Frontend: active player view — when it's your turn, show the question picker on your device
+- [ ] Frontend: waiting player view — show "It's [Player]'s turn to ask..." with turn order visible
+- [ ] Frontend: host view — show turn order sidebar, can still advance/end at any time
+
+---
+
 ## Backlog (post-weekend, if it gets traction)
 - Player avatars / emoji selection
 - Reaction system during free text reveal
