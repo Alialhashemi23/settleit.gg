@@ -8,9 +8,6 @@
 | id | TEXT PK | short code e.g. `FIRE-4829` |
 | host_socket_id | TEXT | current host connection |
 | status | TEXT | `lobby`, `question`, `results` |
-| mode | TEXT | `host-picks` (default) or `player-turns` |
-| turn_order | TEXT | JSON array of player IDs, null in host-picks mode |
-| turn_index | INTEGER | index into turn_order for current active player, null in host-picks mode |
 | created_at | INTEGER | unix timestamp |
 | last_active | INTEGER | unix timestamp, used for cleanup |
 
@@ -63,16 +60,21 @@ If any check fails, emit `error` with `{ message: 'not_authorized' }` back to th
 
 ---
 
-## Host Disconnect Behavior
+## Disconnect Behavior
 
+### Host disconnect
 - On disconnect, check if the socket was the host
 - If yes, set room status to `host_disconnected`, start a 2 minute server-side timer
 - Broadcast `host:disconnected` to all players in the room
 - If host reconnects within 2 minutes and calls `room:rejoin` with the room code + nickname, reassign `host_socket_id`
 - If timer expires with no rejoin, destroy the room and broadcast `room:ended` to all remaining players
 
-### rooms table addition
+#### rooms table addition
 Add `host_reconnect_deadline` (INTEGER, unix timestamp) — set when host disconnects, null otherwise.
+
+### Player disconnect
+- Remove the player from `players` immediately and broadcast `room:updated`
+- In **player-turns** mode: disconnected players are skipped on their turn but remain in `turn_order`; when their index comes up, the server auto-advances to the next player and emits `turn:changed`
 
 ---
 
@@ -109,6 +111,12 @@ Add `host_reconnect_deadline` (INTEGER, unix timestamp) — set when host discon
 
 ---
 
+## No Auto-Advance
+
+`response:update` is informational only — it tells clients how many responses have come in so they can update live counts. The host (or active player in player-turns mode) always presses Next to end a question. The server never auto-advances based on response count.
+
+---
+
 ## Room Code Generation
 
 ```js
@@ -120,6 +128,8 @@ const generateCode = () => {
 };
 ```
 
+Generate a code, check if it already exists in the DB, and retry on collision. Max 5 attempts before returning an error — in practice collisions are extremely rare across ~54,000 possible codes.
+
 ---
 
 ## Room Cleanup
@@ -130,10 +140,19 @@ const generateCode = () => {
 
 ---
 
+## Indexes
+
+```sql
+CREATE INDEX idx_players_room_id ON players(room_id);
+CREATE INDEX idx_responses_question_id ON responses(question_id);
+```
+
+---
+
 ## Project Structure
 
 ```
-thisorthat/
+settleit.gg/
 ├── frontend/          # SvelteKit app
 │   ├── src/
 │   │   ├── routes/
@@ -158,14 +177,12 @@ thisorthat/
 
 ---
 
-## Lunch Scope (Priority Order)
+## Phase 5 Schema Additions (Player Turns Mode)
 
-1. Backend: room creation + join via socket
-2. Backend: player presence (join/leave events)
-3. Frontend: landing page (create room / join with code)
-4. Frontend: lobby view showing connected players
-5. Frontend: host can push a vote question
-6. Frontend: players see question and can vote
-7. Frontend: live result counts update in real-time
+Add these columns to `rooms` when implementing Phase 5:
 
-**Stop here for lunch.** Free text mode, question packs, and UI polish are weekend scope.
+| column | type | notes |
+|---|---|---|
+| `mode` | TEXT | `host-picks` (default) or `player-turns` |
+| `turn_order` | TEXT | JSON array of player IDs, null in host-picks mode |
+| `turn_index` | INTEGER | index into turn_order for current active player, null in host-picks mode |

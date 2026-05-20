@@ -39,18 +39,7 @@ Goal: looks good, feels good on mobile
 
 ---
 
-## Phase 4 — Deploy (1 hr) 🚀
-Goal: publicly accessible URL
-
-- [ ] `docker-compose.yml` finalized
-- [ ] Cloudflare Tunnel setup on home server OR deploy to Hetzner VPS
-- [ ] Caddy reverse proxy + HTTPS
-- [ ] Test on actual phones on actual WiFi
-- [ ] Buy `settleit.gg` if it feels right ($70/yr), fallback `settleit.to` ($30/yr)
-
----
-
-## Phase 5 — Player Turns Mode 🎲
+## Phase 4 — Player Turns Mode (2–3 hrs) 🎲
 Goal: question asking rotates through all players, Skribbl.io style
 
 - [ ] Add `mode` field to room creation — "Host Picks" (default) vs "Player Turns"
@@ -58,6 +47,7 @@ Goal: question asking rotates through all players, Skribbl.io style
 - [ ] Backend: `game:start` event — randomises player order, stores in `turn_order`, broadcasts `game:started` with ordered player list
 - [ ] Backend: gate `question:ask` / `question:next` on active player in player-turns mode (derive from `turn_order[turn_index]`)
 - [ ] Backend: on `question:next` in player-turns mode, increment `turn_index` (wrap around), emit `turn:changed`
+- [ ] Backend: skip disconnected players on their turn, auto-advance
 - [ ] Frontend: room creation UI — add mode toggle ("Host Picks" / "Player Turns")
 - [ ] Frontend: host lobby in player-turns mode — show "Start Game" button instead of "Ask a Question"
 - [ ] Frontend: brief turn order reveal animation after game starts
@@ -67,10 +57,35 @@ Goal: question asking rotates through all players, Skribbl.io style
 
 ---
 
-## Backlog (post-weekend, if it gets traction)
+## Phase 5 — Deploy (1 hr) 🚀
+Goal: publicly accessible URL
+
+- [ ] `docker-compose.yml` finalized
+- [ ] Cloudflare Tunnel setup on home server OR deploy to Hetzner VPS
+- [ ] Caddy reverse proxy + HTTPS
+- [ ] Basic per-IP rate limiting on `room:create` and `response:submit`
+- [ ] Test on actual phones on actual WiFi
+
+---
+
+## Phase 4.5 — Bonfire Test 🔥
+Goal: real-world validation before announcing
+
+- [ ] Play with 6+ friends in a real session
+- [ ] Write down every bug, awkward moment, or missing feature noticed
+- [ ] Fix the top 3 issues before sharing the link publicly
+
+---
+
+## Backlog (post-bonfire, if it gets traction)
 - Player avatars / emoji selection
 - Reaction system during free text reveal
 - Session history / replay
 - Custom question pack builder
-- Rate limiting + abuse protection
 - Redis adapter for horizontal scaling
+
+---
+
+## Domain
+- Purchased: `settleit.gg`
+- Fallback was: `settleit.to` (~$30/yr)

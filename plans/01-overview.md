@@ -26,7 +26,7 @@ There are two game modes, selected by the host at room creation:
 
 ## Two Question Modes
 
-### This or That (Preset Options)
+### Vote
 - Host picks or creates a question with fixed options
 - Players tap to vote
 - Live bar chart updates as votes come in
@@ -53,15 +53,19 @@ In **Player Turns** mode, the **active player** controls:
 - Pushing a question (`question:ask`) — they get the same picker UI as the host
 - The question auto-advances after the host (or active player) ends it
 
-The server validates socket ID against `rooms.host_socket_id` for host-only events and against the current turn's player for active-player events. Unauthorized calls return `error: not_authorized`.
+See `02-technical-spec.md` for server-side enforcement details.
 
-## Host Disconnect Behavior
+## Disconnect Behavior
 
+### Host
 - If the host disconnects, the room enters a `host_disconnected` status
 - Players see a "Waiting for host to reconnect..." message
 - Host has a **2 minute window** to rejoin using the same room code
 - On rejoin, server reassigns `host_socket_id` to their new socket
 - If 2 minutes elapse with no host reconnect, the room is destroyed and all players receive `room:ended`
+
+### Players
+Players who disconnect are removed immediately and can rejoin with the same nickname.
 
 ## Screen Definitions
 
@@ -115,7 +119,6 @@ The server validates socket ID against `rooms.host_socket_id` for host-only even
 - Vote mode (preset options, live bar chart)
 - Free text mode (open answers, live reveal)
 - Host authority (only host controls question flow)
-- Multiple concurrent rooms
 - Room cleanup after 2hr inactivity
 - Docker + basic deployment
 
@@ -132,7 +135,7 @@ The server validates socket ID against `rooms.host_socket_id` for host-only even
 - **No auth, no accounts** — rooms are ephemeral, die after inactivity
 - **Phone-first** — players are on their phones, host has the big screen
 - **Low friction** — URL + code is the entire onboarding
-- **Multiple concurrent rooms** — keyed by room code from day one
+
 
 ## Stack
 
@@ -141,8 +144,3 @@ The server validates socket ID against `rooms.host_socket_id` for host-only even
 - **Database**: SQLite (in-memory for prototype, file-based for prod)
 - **Deployment**: Docker Compose + Cloudflare Tunnel (dev) → Hetzner VPS (prod)
 
-## Domain
-
-- Primary candidate: `settleit.gg` (~$70/yr on Namecheap) — preferred, fits the gaming audience
-- Fallback: `settleit.to` (~$30/yr on Namecheap)
-- Buy after prototype is validated at a bonfire

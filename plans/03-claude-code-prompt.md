@@ -1,7 +1,6 @@
 # SettleIt — Claude Code Kickoff Prompt
 
-Paste this as your first message to Claude Code when you sit down.
-Adjust anything in [brackets] before sending.
+> **Note:** This prompt covers Phase 1 scope only (host-picks mode). Reference `@plans/01-overview.md` and `@plans/02-technical-spec.md` for full system design including player-turns mode.
 
 ---
 
@@ -21,7 +20,8 @@ Build a real-time multiplayer group opinion game called **SettleIt**.
 ### Stack
 - **Frontend**: SvelteKit
 - **Backend**: Bun + Socket.io
-- **Database**: SQLite via `better-sqlite3` (in-memory for now, synchronous is fine)
+- **Database**: SQLite via `bun:sqlite` (in-memory for now, synchronous is fine)
+- **Language**: TypeScript throughout (both frontend and backend)
 - **Structure**: monorepo with `/frontend` and `/backend` folders
 - Dockerized from the start — include a `docker-compose.yml`
 
@@ -32,11 +32,12 @@ Build a real-time multiplayer group opinion game called **SettleIt**.
 - `responses` — id, question_id, player_id, value, submitted_at
 
 ### WebSocket events (Client → Server)
-- `room:create` `{ nickname }` → host creates room
+- `room:create` `{ nickname, mode }` → host creates room
 - `room:join` `{ roomCode, nickname }` → player joins
 - `question:ask` `{ type, prompt, options? }` → host pushes question
 - `response:submit` `{ questionId, value }` → player responds
 - `question:next` → host ends current question
+- `room:rejoin` `{ roomCode, nickname }` → host reclaims session after disconnect
 - `room:end` → host ends session
 
 ### WebSocket events (Server → Client)
@@ -50,7 +51,7 @@ Build a real-time multiplayer group opinion game called **SettleIt**.
 - `error` `{ message }`
 
 ### Room code generation
-Short memorable codes like `FIRE-4829` — adjective prefix + 4 digit number.
+Short memorable codes like `FIRE-4829` — adjective prefix + 4 digit number. Generate, check DB for collision, retry up to 5 times.
 
 ### Start with this scope only
 1. Backend: room creation and join via socket, player presence tracking
