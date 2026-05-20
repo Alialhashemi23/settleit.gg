@@ -2,10 +2,12 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { connect } from "$lib/socket";
   import {
     players, currentQuestion, voteCounts, freetextResponses,
-    hasVoted, questionEnded, hostDisconnected, roomEnded, resetQuestionState
+    hasVoted, questionEnded, hostDisconnected, roomEnded, resetQuestionState,
+    questionHistory,
   } from "$lib/stores";
 
   const code = $page.params.code;
@@ -39,6 +41,14 @@
       questionEnded.set(true);
       if (final.counts) voteCounts.set(final.counts);
       if (final.responses) freetextResponses.set(final.responses);
+      const q = get(currentQuestion);
+      if (q) {
+        questionHistory.update(h => [...h, {
+          question: q,
+          counts: final.counts,
+          responses: final.responses,
+        }]);
+      }
     });
 
     socket.on("host:disconnected", ({ deadline }: { deadline: number }) => {
@@ -53,7 +63,7 @@
     socket.on("room:ended", () => {
       roomEnded.set(true);
       if (hostTimer) clearInterval(hostTimer);
-      goto("/");
+      goto("/summary");
     });
   });
 

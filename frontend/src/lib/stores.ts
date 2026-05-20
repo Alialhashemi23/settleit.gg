@@ -12,6 +12,12 @@ export interface Question {
   options: string[] | null;
 }
 
+export interface HistoryEntry {
+  question: Question;
+  counts?: Record<string, number>;
+  responses?: string[];
+}
+
 export const roomCode = writable<string | null>(null);
 export const players = writable<Player[]>([]);
 export const currentQuestion = writable<Question | null>(null);
@@ -21,6 +27,7 @@ export const hasVoted = writable(false);
 export const questionEnded = writable(false);
 export const hostDisconnected = writable<{ deadline: number } | null>(null);
 export const roomEnded = writable(false);
+export const questionHistory = writable<HistoryEntry[]>([]);
 
 export function resetQuestionState() {
   currentQuestion.set(null);
