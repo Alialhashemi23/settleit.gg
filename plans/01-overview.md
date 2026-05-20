@@ -1,126 +1,129 @@
 # SettleIt — Project Overview
 
-A real-time group opinion game built for bonfire nights and friend groups.
+A real-time social debate game built for bonfire nights and friend groups.
 No accounts, no friction — just a room code and a question.
 
 ## The Core Loop
 
-There are two game modes, selected by the host at room creation:
-
-### Host Picks Mode (default)
 1. Host creates a room → gets a short code (e.g. `FIRE-4829`)
 2. Friends join on their phones via URL + code + nickname
-3. Host asks a question — either from a preset pack or typed custom
-4. Everyone votes or submits answers live
-5. Results display in real-time as they roll in
-6. Host moves to next question whenever ready
+3. Host starts the game — a random turn order is locked in and revealed to everyone
+4. The active player picks or types a question (vote options only) from their own device
+5. Everyone votes — names are visible next to each option, live as votes come in
+6. Players can change their vote freely — the numbers shift in real-time as debate happens
+7. When all-but-one agree on the same option, a 10-second countdown starts
+8. If a holdout flips before it expires, the countdown cancels — debate continues
+9. If the countdown completes, the round is settled on that option
+10. The active player can also force-settle at any time
+11. Turn advances to the next player — repeat until the host ends the session
 
-### Player Turns Mode
-1. Host creates a room in "Player Turns" mode
-2. Friends join the same way
-3. Host starts the game — a random turn order is locked in across all players
-4. The active player (shown on everyone's screen) picks or types a question from their own device
-5. Everyone answers — including the active player
-6. Results reveal, then the turn passes to the next player in the order
-7. Rotates until all players have gone, then loops (or host ends the session)
+**The point:** the live shifting numbers while people argue is the game. "Settle It" means reaching actual group agreement, not just polling.
 
-## Two Question Modes
+---
 
-### Vote
-- Host picks or creates a question with fixed options
-- Players tap to vote
-- Live bar chart updates as votes come in
-- Good for: "Best villain — Sephiroth vs Ganondorf?"
+## One Question Type: Vote
 
-### Hot Take (Free Text)
-- Host asks an open question
-- Players type a free-text answer
-- Answers appear on screen one by one as submitted
-- Group discusses and reacts
-- Good for: "Most underrated game of all time?"
+- Active player creates a question with 2–4 fixed options
+- Everyone votes live, including the active player
+- Names visible next to each option — no anonymous polling
+- Votes are changeable until the round settles
+- Good for: "Who's the GOAT?", "Pineapple on pizza?", "Best console ever?"
 
-## Host Authority Rules
+---
 
-The host always controls:
-- Starting the game / locking in turn order (`game:start`)
+## Consensus Mechanic
+
+- **Full consensus** (everyone on the same option) → settles immediately
+- **Soft consensus** (all-but-one agree) → 10-second countdown starts; holdout can flip to cancel
+- **Force Settle** → only the active player (the one who asked) can skip the countdown
+- The host can always end the room but cannot force-settle individual rounds
+
+---
+
+## Authority Rules
+
+The **host** controls:
+- Starting the game (`game:start`)
 - Ending the session (`room:end`)
 
-In **Host Picks** mode, the host also controls:
-- Pushing questions (`question:ask`)
-- Advancing to the next question (`question:next`)
-
-In **Player Turns** mode, the **active player** controls:
-- Pushing a question (`question:ask`) — they get the same picker UI as the host
-- The question auto-advances after the host (or active player) ends it
+The **active player** (whose turn it is) controls:
+- Asking a question (`question:ask`)
+- Force-settling a stuck round (`question:next`)
 
 See `02-technical-spec.md` for server-side enforcement details.
+
+---
 
 ## Disconnect Behavior
 
 ### Host
-- If the host disconnects, the room enters a `host_disconnected` status
+- If the host disconnects, the room enters `host_disconnected` status
 - Players see a "Waiting for host to reconnect..." message
 - Host has a **2 minute window** to rejoin using the same room code
-- On rejoin, server reassigns `host_socket_id` to their new socket
-- If 2 minutes elapse with no host reconnect, the room is destroyed and all players receive `room:ended`
+- On rejoin, server reassigns `host_socket_id`
+- If 2 minutes elapse with no rejoin, the room is destroyed and all players receive `room:ended`
 
 ### Players
-Players who disconnect are removed immediately and can rejoin with the same nickname.
+Players who disconnect are removed immediately and can rejoin with the same nickname. In player turns mode, disconnected players are skipped on their turn.
+
+---
 
 ## Screen Definitions
 
 ### Landing Screen (`/`)
 - Two options: "Create Room" and "Join Room"
-- Join Room reveals a code input + nickname input
-- Create Room asks for a nickname and a game mode ("Host Picks" or "Player Turns"), then creates the room and redirects to host view
-
-### Lobby Screen — Player (`/play/[code]`)
-- Shows room code large at the top
-- List of connected players with nicknames
-- "Waiting for host to start..." message
-- Updates live as players join
+- Join reveals a code input + nickname input
+- Create asks for a nickname only → creates room → redirects to host view
 
 ### Lobby Screen — Host (`/host/[code]`)
-- Shows room code large and readable (players are typing this on their phones)
+- Shows room code large and readable
 - Live player list
-- In Host Picks mode: "Ask a Question" button opens picker
-- In Player Turns mode: "Start Game" button locks in random turn order and broadcasts it
+- "Start Game" button — requires 2+ players; locks in random turn order
 
-### Question Picker (Host Picks mode: host only / Player Turns mode: active player only)
-- Tabs: "Question Packs" | "Custom Question"
-- Pack tab: grid of packs (Gaming, Anime, Wildcards), tap to expand, tap a question to push it
-- Custom tab: text input for prompt, toggle for Vote vs Free Text mode, option inputs if Vote mode
+### Lobby Screen — Player (`/play/[code]`)
+- Shows room code at the top
+- List of connected players
+- "Waiting for host to start..." message
 
-### Question Screen — Player (`/play/[code]`)
-- Vote mode: prompt at top, large tap targets for each option, confirmation on tap, locked after voting
-- Free text mode: prompt at top, text input, submit button
-- In Player Turns mode: shows whose turn it is in the header; active player sees the question picker instead of a waiting screen
+### Turn Order Reveal (both views)
+- Shown for 2.5 seconds after "Start Game" is pressed
+- Animated list of players in order, current player highlighted as "YOU"
+- Auto-dismisses; active player's question picker opens immediately after
 
-### Question Screen — Host (`/host/[code]`)
-- Prompt displayed at top
-- Vote mode: live bar chart updating as votes come in, player count indicator
-- Free text mode: answers slide in as submitted
-- "Next Question" button always visible (host can always advance)
-- In Player Turns mode: shows turn order and whose turn is next
+### Question Picker (active player only, on their own device)
+- Tabs: "Custom" | "From Pack"
+- Custom: prompt input + 2–4 option fields
+- Pack: choose from Gaming, Anime, or Wildcards packs
 
-### Turn Order Screen (Player Turns mode only)
-- Displayed briefly after "Start Game" is pressed
-- Shows the randomised player order with an animation
-- Auto-dismisses after a few seconds, active player immediately gets the picker
+### Active Question Screen (all players)
+- Question prompt at top
+- Each option shown as a card with live count, thin progress bar, and names of voters
+- Current player's selection highlighted in orange
+- Tapping any option changes vote and broadcasts immediately
+- Countdown banner appears when soft consensus is reached: "Settling on X in Ns — change vote to stop it!"
+- Active player sees a "Force Settle" button
 
-### Results / End Screen
-- Session summary — questions asked, most popular answers
-- "Play Again" button starts a new session in the same room
+### Post-Round (both views)
+- "✅ Settled!" confirmation shown briefly
+- Turn advances to next player; their picker opens automatically
+
+### Session Summary (`/summary`)
+- All questions asked, what was settled, who voted what
+- "New Game" button returns to landing
+
+---
 
 ## MVP Scope
 
 **Included:**
 - Room creation and join via code + nickname
-- Vote mode (preset options, live bar chart)
-- Free text mode (open answers, live reveal)
-- Host authority (only host controls question flow)
+- Player turns — question asking rotates through everyone
+- Vote questions with live named tallies
+- Soft consensus countdown + force settle
+- Turn order reveal animation
+- Session summary screen
 - Room cleanup after 2hr inactivity
-- Docker + basic deployment
+- Docker + Cloudflare Tunnel deployment
 
 **Explicitly excluded (post-MVP):**
 - User accounts or persistent identity
@@ -130,17 +133,21 @@ Players who disconnect are removed immediately and can rejoin with the same nick
 - Redis / horizontal scaling
 - Monetization
 
+---
+
 ## Design Principles
 
 - **No auth, no accounts** — rooms are ephemeral, die after inactivity
 - **Phone-first** — players are on their phones, host has the big screen
 - **Low friction** — URL + code is the entire onboarding
+- **Social over anonymous** — names on votes create accountability and debate
 
+---
 
 ## Stack
 
-- **Frontend**: SvelteKit
+- **Frontend**: SvelteKit + Svelte 5
 - **Backend**: Bun + Socket.io (WebSockets)
-- **Database**: SQLite (in-memory for prototype, file-based for prod)
-- **Deployment**: Docker Compose + Cloudflare Tunnel (dev) → Hetzner VPS (prod)
-
+- **Database**: SQLite via `bun:sqlite`
+- **Language**: TypeScript throughout
+- **Deployment**: Docker Compose + Cloudflare Tunnel

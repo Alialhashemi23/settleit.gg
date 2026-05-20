@@ -7,7 +7,11 @@
 |---|---|---|
 | id | TEXT PK | short code e.g. `FIRE-4829` |
 | host_socket_id | TEXT | current host connection |
-| status | TEXT | `lobby`, `question`, `results` |
+| status | TEXT | `lobby`, `question` |
+| mode | TEXT | always `player-turns` |
+| turn_order | TEXT | JSON array of player IDs, set on `game:start` |
+| turn_index | INTEGER | index into turn_order for current active player |
+| host_reconnect_deadline | INTEGER | unix timestamp, set on host disconnect, null otherwise |
 | created_at | INTEGER | unix timestamp |
 | last_active | INTEGER | unix timestamp, used for cleanup |
 
@@ -25,9 +29,9 @@
 |---|---|---|
 | id | TEXT PK | uuid |
 | room_id | TEXT FK | references rooms.id |
-| type | TEXT | `vote` or `freetext` |
+| type | TEXT | always `vote` |
 | prompt | TEXT | the question text |
-| options | TEXT | JSON array, null for freetext |
+| options | TEXT | JSON array of 2–4 option strings |
 | created_at | INTEGER | unix timestamp |
 
 ### responses
@@ -36,45 +40,52 @@
 | id | TEXT PK | uuid |
 | question_id | TEXT FK | references questions.id |
 | player_id | TEXT FK | references players.id |
-| value | TEXT | selected option or free text |
-| submitted_at | INTEGER | unix timestamp |
+| value | TEXT | selected option (upserted on vote change) |
+| submitted_at | INTEGER | unix timestamp, updated on change |
 
 ---
 
-## Host Authority
+## Authority
 
-The server must check `socket.id === room.host_socket_id` before processing these events in all modes:
+The server must check `socket.id === room.host_socket_id` before:
 - `game:start`
 - `room:end`
 
-In **host-picks** mode, also gate on host socket ID:
-- `question:ask`
-- `question:next`
+The active player (derived from `turn_order[turn_index]`) controls:
+- `question:ask` — only the active player can ask
+- `question:next` (force-settle) — active player or host as override
 
-In **player-turns** mode, `question:ask` and `question:next` are gated on the **active player** instead:
-- Derive active player ID from `turn_order[turn_index]`
-- Check that `socket.data.playerId === activePlayerId`
-- Host can still call `question:next` as an override (e.g. to skip a stuck turn)
+Check: `socket.data.playerId === turn_order[turn_index]`
 
-If any check fails, emit `error` with `{ message: 'not_authorized' }` back to that socket. Never trust the client to self-identify as host or active player.
+If any check fails, emit `error { message: 'not_authorized' }`. Never trust the client to self-identify.
+
+---
+
+## Consensus Mechanic
+
+After every `response:submit` (including vote changes), the server checks:
+
+1. **Full consensus**: all `players.length` have voted the same value → settle immediately
+2. **Soft consensus**: all-but-one agree (`players.length - 1` for groups ≥ 3; all for 2-player) → start 10s countdown
+3. **Consensus broken**: leading option drops below threshold → cancel countdown
+4. **Force settle**: active player (or host override) calls `question:next` → cancel countdown, settle with current leader
+
+Countdown state is held in-memory per room (not persisted to DB). On settle, emit `question:ended` and advance turn.
 
 ---
 
 ## Disconnect Behavior
 
 ### Host disconnect
-- On disconnect, check if the socket was the host
-- If yes, set room status to `host_disconnected`, start a 2 minute server-side timer
-- Broadcast `host:disconnected` to all players in the room
-- If host reconnects within 2 minutes and calls `room:rejoin` with the room code + nickname, reassign `host_socket_id`
-- If timer expires with no rejoin, destroy the room and broadcast `room:ended` to all remaining players
-
-#### rooms table addition
-Add `host_reconnect_deadline` (INTEGER, unix timestamp) — set when host disconnects, null otherwise.
+- Set room status to `host_disconnected`, start 2-minute server-side timer
+- Broadcast `host:disconnected { deadline }` to all players
+- If host calls `room:rejoin { roomCode, nickname }` within 2 minutes, reassign `host_socket_id`
+- If timer expires, destroy room and broadcast `room:ended`
 
 ### Player disconnect
-- Remove the player from `players` immediately and broadcast `room:updated`
-- In **player-turns** mode: disconnected players are skipped on their turn but remain in `turn_order`; when their index comes up, the server auto-advances to the next player and emits `turn:changed`
+- Remove from `players` immediately, broadcast `room:updated`
+- If disconnected player was the active turn player: auto-advance turn, emit `turn:changed`
+- Player can rejoin with same nickname via `room:join`
 
 ---
 
@@ -84,36 +95,32 @@ Add `host_reconnect_deadline` (INTEGER, unix timestamp) — set when host discon
 
 | event | payload | description |
 |---|---|---|
-| `room:create` | `{ nickname, mode }` | host creates a room; mode is `host-picks` or `player-turns` |
+| `room:create` | `{ nickname }` | host creates a room |
 | `room:join` | `{ roomCode, nickname }` | player joins existing room |
-| `game:start` | `{}` | host starts the game in player-turns mode; randomises turn order |
-| `question:ask` | `{ type, prompt, options? }` | host (host-picks) or active player (player-turns) pushes a question |
-| `response:submit` | `{ questionId, value }` | player submits vote or text |
-| `question:next` | `{}` | host or active player ends current question; advances turn in player-turns mode |
-| `room:rejoin` | `{ roomCode, nickname }` | host attempts to reclaim session |
+| `room:rejoin` | `{ roomCode, nickname }` | host reclaims session after disconnect |
 | `room:end` | `{}` | host ends the session |
+| `game:start` | `{}` | host starts the game; randomises and locks turn order |
+| `question:ask` | `{ prompt, options }` | active player pushes a vote question |
+| `response:submit` | `{ questionId, value }` | player submits or changes their vote |
+| `question:next` | `{}` | active player force-settles; host can override |
 
 ### Server → Client
 
 | event | payload | description |
 |---|---|---|
-| `room:created` | `{ roomCode, mode }` | confirms room creation, sends code and mode |
-| `room:joined` | `{ roomCode, players, mode }` | confirms join, sends player list and mode |
+| `room:created` | `{ roomCode }` | confirms room creation |
+| `room:joined` | `{ roomCode, players, playerId }` | confirms join; includes caller's own player ID |
 | `room:updated` | `{ players }` | player joined or left |
-| `game:started` | `{ turnOrder }` | broadcast when host starts game; turnOrder is ordered array of `{ id, nickname }` |
-| `turn:changed` | `{ activePlayerId, activeNickname, turnIndex }` | broadcast when turn advances to next player |
+| `game:started` | `{ turnOrder, activePlayerId, activeNickname }` | turn order locked; first player identified |
+| `turn:changed` | `{ activePlayerId, activeNickname, turnIndex }` | turn advanced to next player |
 | `question:new` | `{ question }` | new question pushed to all players |
-| `response:update` | `{ counts, responses }` | live update as answers come in |
-| `question:ended` | `{ final counts/responses }` | question ended, results finalised |
+| `response:update` | `{ votes, totalPlayers }` | live update; `votes` is `[{ playerId, nickname, value }]` |
+| `question:countdown` | `{ deadline, leadingOption }` | soft consensus reached; countdown started |
+| `question:countdown:cancelled` | `{}` | consensus broken; countdown cancelled |
+| `question:ended` | `{ final: { counts }, settledOption }` | question settled |
 | `room:ended` | `{}` | session over |
 | `host:disconnected` | `{ deadline }` | host dropped, reconnect window started |
 | `error` | `{ message }` | something went wrong |
-
----
-
-## No Auto-Advance
-
-`response:update` is informational only — it tells clients how many responses have come in so they can update live counts. The host (or active player in player-turns mode) always presses Next to end a question. The server never auto-advances based on response count.
 
 ---
 
@@ -134,7 +141,7 @@ Generate a code, check if it already exists in the DB, and retry on collision. M
 
 ## Room Cleanup
 
-- Cron job or interval every 30 minutes
+- Interval every 30 minutes
 - Delete rooms where `last_active` is older than 2 hours
 - Cascade delete players, questions, responses
 
@@ -156,33 +163,25 @@ settleit.gg/
 ├── frontend/          # SvelteKit app
 │   ├── src/
 │   │   ├── routes/
-│   │   │   ├── +page.svelte        # landing / create or join
-│   │   │   ├── host/[code]/        # host view
-│   │   │   └── play/[code]/        # player view
+│   │   │   ├── +page.svelte          # landing / create or join
+│   │   │   ├── host/[code]/          # host view
+│   │   │   ├── play/[code]/          # player view
+│   │   │   └── summary/              # post-session summary
 │   │   └── lib/
-│   │       ├── socket.ts           # socket.io client setup
-│   │       └── stores.ts           # svelte stores for room state
+│   │       ├── socket.ts             # socket.io client setup
+│   │       ├── stores.ts             # svelte stores for room state
+│   │       ├── packs.ts              # preset question packs
+│   │       └── QuestionPicker.svelte # shared question picker component
 │   └── ...
 ├── backend/           # Bun + Socket.io server
 │   ├── index.ts       # entry, HTTP + WS server
-│   ├── db.ts          # SQLite setup + queries
-│   ├── rooms.ts       # room logic
+│   ├── db.ts          # SQLite setup + indexes
+│   ├── rooms.ts       # room/player CRUD + turn helpers
+│   ├── game.ts        # consensus logic, countdown, settleQuestion
 │   └── handlers/      # socket event handlers
 │       ├── room.ts
 │       ├── question.ts
 │       └── response.ts
 ├── docker-compose.yml
-└── README.md
+└── plans/
 ```
-
----
-
-## Phase 5 Schema Additions (Player Turns Mode)
-
-Add these columns to `rooms` when implementing Phase 5:
-
-| column | type | notes |
-|---|---|---|
-| `mode` | TEXT | `host-picks` (default) or `player-turns` |
-| `turn_order` | TEXT | JSON array of player IDs, null in host-picks mode |
-| `turn_index` | INTEGER | index into turn_order for current active player, null in host-picks mode |
