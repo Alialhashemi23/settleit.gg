@@ -16,11 +16,10 @@ import { db } from "../db";
 const reconnectTimers = new Map<string, Timer>();
 
 export function registerRoomHandlers(io: Server, socket: Socket) {
-  socket.on("room:create", ({ nickname, mode }: { nickname: string; mode?: string }) => {
-    const roomMode = mode === "player-turns" ? "player-turns" : "host-picks";
+  socket.on("room:create", ({ nickname }: { nickname: string }) => {
     let code: string;
     try {
-      code = createRoom(socket.id, roomMode);
+      code = createRoom(socket.id, "player-turns");
     } catch {
       socket.emit("error", { message: "room_create_failed" });
       return;
@@ -31,7 +30,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     socket.data.isHost = true;
     socket.data.playerId = playerId;
     socket.emit("room:created", { roomCode: code });
-    socket.emit("room:joined", { roomCode: code, players: getRoomPlayers(code), mode: roomMode, playerId });
+    socket.emit("room:joined", { roomCode: code, players: getRoomPlayers(code), playerId });
   });
 
   socket.on("room:join", ({ roomCode, nickname }: { roomCode: string; nickname: string }) => {
@@ -55,7 +54,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     socket.data.playerId = playerId;
 
     const players = getRoomPlayers(code);
-    socket.emit("room:joined", { roomCode: code, players, mode: room.mode, playerId });
+    socket.emit("room:joined", { roomCode: code, players, playerId });
     socket.to(code).emit("room:updated", { players });
 
     const activeQ = db.query(
@@ -94,7 +93,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     socket.data.playerId = playerId;
 
     const players = getRoomPlayers(code);
-    socket.emit("room:joined", { roomCode: code, players, mode: room.mode, playerId });
+    socket.emit("room:joined", { roomCode: code, players, playerId });
     io.to(code).emit("room:updated", { players });
   });
 

@@ -7,38 +7,47 @@ export interface Player {
 
 export interface Question {
   id: string;
-  type: "vote" | "freetext";
+  type: "vote";
   prompt: string;
-  options: string[] | null;
+  options: string[];
+}
+
+export interface LiveVote {
+  playerId: string;
+  nickname: string;
+  value: string;
 }
 
 export interface HistoryEntry {
   question: Question;
-  counts?: Record<string, number>;
-  responses?: string[];
+  settledOption: string | null;
+  votes: LiveVote[];
 }
 
 export const roomCode = writable<string | null>(null);
 export const players = writable<Player[]>([]);
 export const currentQuestion = writable<Question | null>(null);
-export const voteCounts = writable<Record<string, number>>({});
-export const freetextResponses = writable<string[]>([]);
-export const hasVoted = writable(false);
+export const liveVotes = writable<LiveVote[]>([]);
+export const totalPlayers = writable<number>(0);
+export const myVote = writable<string | null>(null);
 export const questionEnded = writable(false);
 export const hostDisconnected = writable<{ deadline: number } | null>(null);
 export const roomEnded = writable(false);
 export const questionHistory = writable<HistoryEntry[]>([]);
 
-// Player Turns mode
-export const gameMode = writable<"host-picks" | "player-turns">("host-picks");
+// Countdown
+export const countdown = writable<{ deadline: number; leadingOption: string } | null>(null);
+
+// Player Turns
 export const myPlayerId = writable<string | null>(null);
 export const turnOrder = writable<Player[]>([]);
 export const activePlayerId = writable<string | null>(null);
 
 export function resetQuestionState() {
   currentQuestion.set(null);
-  voteCounts.set({});
-  freetextResponses.set([]);
-  hasVoted.set(false);
+  liveVotes.set([]);
+  totalPlayers.set(0);
+  myVote.set(null);
   questionEnded.set(false);
+  countdown.set(null);
 }

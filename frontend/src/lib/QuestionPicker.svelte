@@ -6,31 +6,21 @@
   let { socket, onPushed }: { socket: Socket; onPushed?: () => void } = $props();
 
   let pickerTab: "custom" | "pack" = $state("custom");
-  let questionType: "vote" | "freetext" = $state("vote");
   let customPrompt = $state("");
-  let customOptions: string[] = $state(["", ""]);
+  let customOptions: string[] = $state(["", "", "", ""]);
   let selectedPack: Pack | null = $state(null);
 
   function pushQuestion() {
-    if (!customPrompt.trim()) return;
-    if (questionType === "vote") {
-      const opts = customOptions.filter(o => o.trim());
-      if (opts.length < 2) return;
-      socket.emit("question:ask", { type: "vote", prompt: customPrompt.trim(), options: opts });
-    } else {
-      socket.emit("question:ask", { type: "freetext", prompt: customPrompt.trim() });
-    }
+    const opts = customOptions.filter(o => o.trim());
+    if (!customPrompt.trim() || opts.length < 2) return;
+    socket.emit("question:ask", { prompt: customPrompt.trim(), options: opts });
     customPrompt = "";
-    customOptions = ["", ""];
+    customOptions = ["", "", "", ""];
     onPushed?.();
   }
 
   function askPackQuestion(q: PackQuestion) {
-    socket.emit("question:ask", {
-      type: q.type,
-      prompt: q.prompt,
-      ...(q.type === "vote" ? { options: q.options } : {}),
-    });
+    socket.emit("question:ask", { prompt: q.prompt, options: q.options });
     onPushed?.();
   }
 </script>
@@ -43,31 +33,19 @@
 
   {#if pickerTab === 'custom'}
     <form onsubmit={(e) => { e.preventDefault(); pushQuestion(); }}>
-      <div class="type-toggle">
-        <button type="button" class="type-btn {questionType === 'vote' ? 'active' : ''}" onclick={() => questionType = 'vote'}>Vote</button>
-        <button type="button" class="type-btn {questionType === 'freetext' ? 'active' : ''}" onclick={() => questionType = 'freetext'}>Hot Take</button>
-      </div>
       <label>
         Question
-        <input
-          type="text"
-          bind:value={customPrompt}
-          placeholder={questionType === 'vote' ? 'Best villain ever?' : 'What would your supervillain name be?'}
-          maxlength="200"
-        />
+        <input type="text" bind:value={customPrompt} placeholder="Who's the GOAT?" maxlength="200" />
       </label>
-      {#if questionType === 'vote'}
-        <fieldset>
-          <legend>Options</legend>
-          {#each customOptions as _, i}
-            <input type="text" bind:value={customOptions[i]} placeholder="Option {i + 1}" maxlength="60" />
-          {/each}
-          {#if customOptions.length < 4}
-            <button type="button" class="btn-ghost" onclick={() => customOptions = [...customOptions, ""]}>+ Add option</button>
-          {/if}
-        </fieldset>
-      {/if}
-      <button class="btn-primary" type="submit">Push Question</button>
+      <fieldset>
+        <legend>Options (2–4)</legend>
+        {#each customOptions as _, i}
+          <input type="text" bind:value={customOptions[i]} placeholder="Option {i + 1}" maxlength="60" />
+        {/each}
+      </fieldset>
+      <button class="btn-primary" type="submit" disabled={!customPrompt.trim() || customOptions.filter(o => o.trim()).length < 2}>
+        Ask It
+      </button>
     </form>
   {:else}
     <div class="pack-browser">
@@ -87,8 +65,7 @@
           <h4>{selectedPack.emoji} {selectedPack.name}</h4>
           {#each selectedPack.questions as q}
             <button class="question-card" onclick={() => askPackQuestion(q)}>
-              <span class="q-prompt">{q.prompt}</span>
-              <span class="q-badge {q.type}">{q.type === 'vote' ? 'Vote' : 'Hot Take'}</span>
+              {q.prompt}
             </button>
           {/each}
         </div>
@@ -122,29 +99,6 @@
   }
 
   .tab.active { background: #ff4d00; color: #fff; }
-
-  .type-toggle {
-    display: flex;
-    gap: 0.25rem;
-    background: #1a1a1a;
-    border-radius: 0.5rem;
-    padding: 0.2rem;
-  }
-
-  .type-btn {
-    flex: 1;
-    padding: 0.4rem;
-    border-radius: 0.35rem;
-    border: none;
-    background: transparent;
-    color: #888;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .type-btn.active { background: #333; color: #fff; }
 
   form { display: flex; flex-direction: column; gap: 0.75rem; }
 
@@ -191,7 +145,8 @@
     cursor: pointer;
   }
 
-  .btn-primary:hover { opacity: 0.9; }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary:not(:disabled):hover { opacity: 0.9; }
 
   .btn-ghost {
     background: none;
@@ -207,11 +162,7 @@
 
   .pack-browser { display: flex; flex-direction: column; gap: 0.75rem; }
 
-  .pack-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-  }
+  .pack-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
 
   .pack-card {
     display: flex;
@@ -233,39 +184,21 @@
   .pack-count { color: #666; font-size: 0.75rem; }
 
   .pack-questions { display: flex; flex-direction: column; gap: 0.5rem; }
-
   .pack-questions h4 { margin: 0.25rem 0 0.5rem; font-size: 1rem; }
-
-  .back-btn { align-self: flex-start; font-size: 0.875rem; margin-bottom: 0.25rem; }
+  .back-btn { align-self: flex-start; margin-bottom: 0.25rem; }
 
   .question-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
     padding: 0.75rem 1rem;
     border-radius: 0.5rem;
     border: 1px solid #222;
     background: #1a1a1a;
     cursor: pointer;
     text-align: left;
+    font-size: 0.9rem;
+    color: #ddd;
     transition: border-color 0.15s, background 0.15s;
+    width: 100%;
   }
 
   .question-card:hover { border-color: #ff4d00; background: #1f0d00; }
-
-  .q-prompt { flex: 1; font-size: 0.9rem; color: #ddd; }
-
-  .q-badge {
-    flex-shrink: 0;
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.25rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .q-badge.vote { background: #1a3a1a; color: #5dde5d; }
-  .q-badge.freetext { background: #1a1a3a; color: #7d9fff; }
 </style>

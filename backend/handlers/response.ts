@@ -1,6 +1,7 @@
 import type { Server, Socket } from "socket.io";
-import { getRoom, touchRoom } from "../rooms";
+import { getRoom, getRoomPlayers, touchRoom } from "../rooms";
 import { db } from "../db";
+import { checkConsensus, settleQuestion, startCountdown, cancelCountdown, hasActiveCountdown } from "../game";
 
 export function registerResponseHandlers(io: Server, socket: Socket) {
   socket.on("response:submit", ({ questionId, value }: { questionId: string; value: string }) => {
@@ -22,35 +23,57 @@ export function registerResponseHandlers(io: Server, socket: Socket) {
     const player = db.query("SELECT id FROM players WHERE socket_id = ?").get(socket.id) as { id: string } | null;
     if (!player) return;
 
-    // One response per player per question
-    const existing = db.query(
-      "SELECT id FROM responses WHERE question_id = ? AND player_id = ?"
-    ).get(questionId, player.id);
-    if (existing) {
-      socket.emit("error", { message: "already_submitted" });
+    // Validate value is one of the question's options
+    const options: string[] = JSON.parse(q.options ?? "[]");
+    if (!options.includes(value)) {
+      socket.emit("error", { message: "invalid_option" });
       return;
     }
 
-    db.run(
-      "INSERT INTO responses (id, question_id, player_id, value, submitted_at) VALUES (?, ?, ?, ?, ?)",
-      [crypto.randomUUID(), questionId, player.id, value, Date.now()]
-    );
+    // Upsert: allow vote changes
+    const existing = db.query(
+      "SELECT id FROM responses WHERE question_id = ? AND player_id = ?"
+    ).get(questionId, player.id);
+
+    if (existing) {
+      db.run(
+        "UPDATE responses SET value = ?, submitted_at = ? WHERE question_id = ? AND player_id = ?",
+        [value, Date.now(), questionId, player.id]
+      );
+    } else {
+      db.run(
+        "INSERT INTO responses (id, question_id, player_id, value, submitted_at) VALUES (?, ?, ?, ?, ?)",
+        [crypto.randomUUID(), questionId, player.id, value, Date.now()]
+      );
+    }
+
     touchRoom(code);
 
-    if (q.type === "vote") {
-      const options: string[] = JSON.parse(q.options ?? "[]");
-      const counts: Record<string, number> = {};
-      for (const opt of options) counts[opt] = 0;
-      const rows = db.query(
-        "SELECT value, COUNT(*) as count FROM responses WHERE question_id = ? GROUP BY value"
-      ).all(questionId) as { value: string; count: number }[];
-      for (const row of rows) counts[row.value] = row.count;
-      io.to(code).emit("response:update", { counts, responses: [] });
+    // Broadcast updated votes with player names
+    const votes = db.query(`
+      SELECT r.value, p.id as playerId, p.nickname
+      FROM responses r
+      JOIN players p ON r.player_id = p.id
+      WHERE r.question_id = ?
+      ORDER BY r.submitted_at ASC
+    `).all(questionId) as { value: string; playerId: string; nickname: string }[];
+
+    const players = getRoomPlayers(code);
+    io.to(code).emit("response:update", { votes, totalPlayers: players.length });
+
+    // Consensus check
+    const consensus = checkConsensus(votes, players.length);
+
+    if (consensus.type === "full") {
+      cancelCountdown(io, code);
+      settleQuestion(io, code);
+    } else if (consensus.type === "soft") {
+      if (!hasActiveCountdown(code)) {
+        startCountdown(io, code, consensus.leadingOption!);
+      }
     } else {
-      const responses = db.query(
-        "SELECT value FROM responses WHERE question_id = ? ORDER BY submitted_at ASC"
-      ).all(questionId) as { value: string }[];
-      io.to(code).emit("response:update", { counts: {}, responses: responses.map((r) => r.value) });
+      // Consensus broken — cancel countdown if running
+      cancelCountdown(io, code);
     }
   });
 }

@@ -21,36 +21,35 @@
 
       <div class="entries">
         {#each history as entry, i}
+          {@const optionCounts = (entry.question.options ?? []).map(opt => ({
+            opt,
+            count: entry.votes.filter(v => v.value === opt).length,
+            voters: entry.votes.filter(v => v.value === opt).map(v => v.nickname),
+          }))}
+          {@const total = entry.votes.length}
           <div class="entry">
             <div class="entry-header">
               <span class="entry-num">Q{i + 1}</span>
-              <span class="entry-badge {entry.question.type}">{entry.question.type === "vote" ? "Vote" : "Hot Take"}</span>
+              {#if entry.settledOption}
+                <span class="settled-badge">Settled: {entry.settledOption}</span>
+              {/if}
             </div>
             <h3>{entry.question.prompt}</h3>
-
-            {#if entry.question.type === "vote" && entry.counts}
-              {@const total = Object.values(entry.counts).reduce((a, b) => a + b, 0)}
-              <div class="vote-results">
-                {#each Object.entries(entry.counts).sort(([, a], [, b]) => b - a) as [opt, count]}
-                  {@const pct = Math.round((count / Math.max(1, total)) * 100)}
-                  <div class="bar-row">
-                    <span class="bar-label">{opt}</span>
-                    <div class="bar-track">
-                      <div class="bar-fill" style="width: {pct}%"></div>
-                    </div>
-                    <span class="bar-stat">{count} ({pct}%)</span>
+            <div class="vote-results">
+              {#each optionCounts.sort((a, b) => b.count - a.count) as { opt, count, voters }}
+                {@const pct = Math.round((count / Math.max(1, total)) * 100)}
+                <div class="bar-row {entry.settledOption === opt ? 'settled' : ''}">
+                  <span class="bar-label">{opt}</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: {pct}%"></div>
                   </div>
-                {/each}
-              </div>
-            {:else if entry.responses && entry.responses.length > 0}
-              <div class="text-results">
-                {#each entry.responses as r}
-                  <div class="text-item">{r}</div>
-                {/each}
-              </div>
-            {:else}
-              <p class="no-responses">No responses</p>
-            {/if}
+                  <span class="bar-stat">{count}</span>
+                </div>
+                {#if voters.length > 0}
+                  <div class="voter-names">{voters.join(', ')}</div>
+                {/if}
+              {/each}
+            </div>
           </div>
         {/each}
       </div>
@@ -117,6 +116,25 @@
     gap: 0.5rem;
   }
 
+  .settled-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #5dde5d;
+    background: #1a3a1a;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+  }
+
+  .bar-row.settled .bar-label { color: #5dde5d; }
+  .bar-row.settled .bar-fill { background: #5dde5d; }
+
+  .voter-names {
+    font-size: 0.75rem;
+    color: #555;
+    margin-top: -0.25rem;
+    padding-left: 0.25rem;
+  }
+
   .entry-num {
     font-size: 0.75rem;
     font-weight: 700;
@@ -125,17 +143,6 @@
     letter-spacing: 0.05em;
   }
 
-  .entry-badge {
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.25rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .entry-badge.vote { background: #1a3a1a; color: #5dde5d; }
-  .entry-badge.freetext { background: #1a1a3a; color: #7d9fff; }
 
   h3 {
     margin: 0;
@@ -186,26 +193,6 @@
     text-align: right;
   }
 
-  .text-results {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .text-item {
-    background: #1a1a1a;
-    padding: 0.6rem 0.85rem;
-    border-radius: 0.4rem;
-    font-size: 0.9rem;
-    color: #ddd;
-  }
-
-  .no-responses {
-    color: #555;
-    font-size: 0.875rem;
-    font-style: italic;
-    margin: 0;
-  }
 
   .btn-primary {
     padding: 0.9rem;

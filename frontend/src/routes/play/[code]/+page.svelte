@@ -5,17 +5,15 @@
   import { get } from "svelte/store";
   import { connect } from "$lib/socket";
   import {
-    roomCode, players, currentQuestion, voteCounts, freetextResponses,
-    hasVoted, questionEnded, hostDisconnected, roomEnded, resetQuestionState,
-    questionHistory, gameMode, myPlayerId, turnOrder, activePlayerId,
+    roomCode, players, currentQuestion, liveVotes, totalPlayers,
+    myVote, questionEnded, hostDisconnected, roomEnded,
+    resetQuestionState, questionHistory, countdown,
+    myPlayerId, turnOrder, activePlayerId,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
 
   const code = $page.params.code;
   let socket = connect();
-  let selectedOption: string | null = $state(null);
-  let freetextInput = $state("");
-  let submitted = $state(false);
   let hostWaitSeconds = $state(0);
   let hostTimer: ReturnType<typeof setInterval> | null = null;
   let notInRoom = $state(false);
@@ -23,15 +21,26 @@
   let showPicker = $state(false);
   let showReveal = $state(false);
   let revealTimeout: ReturnType<typeof setTimeout> | null = null;
+  let countdownSeconds = $state(0);
+  let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
-  let isMyTurn = $derived($gameMode === "player-turns" && $activePlayerId !== null && $activePlayerId === $myPlayerId);
+  let isMyTurn = $derived($activePlayerId !== null && $activePlayerId === $myPlayerId);
   let activeTurnNickname = $derived($turnOrder.find(p => p.id === $activePlayerId)?.nickname ?? "");
 
+  function startCountdownTick(deadline: number) {
+    if (countdownInterval) clearInterval(countdownInterval);
+    countdownSeconds = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    countdownInterval = setInterval(() => {
+      countdownSeconds = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      if (countdownSeconds <= 0 && countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }, 200);
+  }
+
   onMount(() => {
-    if (!get(roomCode)) {
-      notInRoom = true;
-      return;
-    }
+    if (!get(roomCode)) { notInRoom = true; return; }
 
     socket.on("connect_error", () => { connectionLost = true; });
     socket.on("disconnect", () => { connectionLost = true; });
@@ -50,38 +59,48 @@
 
     socket.on("turn:changed", ({ activePlayerId: apId }: any) => {
       activePlayerId.set(apId);
-      if (apId === get(myPlayerId)) {
-        showPicker = true;
-      }
+      if (apId === get(myPlayerId)) showPicker = true;
     });
 
     socket.on("question:new", ({ question }: any) => {
       currentQuestion.set(question);
-      voteCounts.set(question.options ? Object.fromEntries(question.options.map((o: string) => [o, 0])) : {});
-      freetextResponses.set([]);
-      hasVoted.set(false);
+      liveVotes.set([]);
+      totalPlayers.set(get(players).length);
+      myVote.set(null);
       questionEnded.set(false);
-      selectedOption = null;
-      freetextInput = "";
-      submitted = false;
+      countdown.set(null);
       showPicker = false;
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
     });
 
-    socket.on("response:update", ({ counts, responses }: any) => {
-      if (counts && Object.keys(counts).length) voteCounts.set(counts);
-      if (responses?.length) freetextResponses.set(responses);
+    socket.on("response:update", ({ votes, totalPlayers: tp }: any) => {
+      liveVotes.set(votes);
+      totalPlayers.set(tp);
+      const pid = get(myPlayerId);
+      const mine = votes.find((v: any) => v.playerId === pid);
+      if (mine) myVote.set(mine.value);
     });
 
-    socket.on("question:ended", ({ final }: any) => {
+    socket.on("question:countdown", ({ deadline, leadingOption }: any) => {
+      countdown.set({ deadline, leadingOption });
+      startCountdownTick(deadline);
+    });
+
+    socket.on("question:countdown:cancelled", () => {
+      countdown.set(null);
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    });
+
+    socket.on("question:ended", ({ final, settledOption }: any) => {
       questionEnded.set(true);
-      if (final.counts) voteCounts.set(final.counts);
-      if (final.responses) freetextResponses.set(final.responses);
+      countdown.set(null);
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
       const q = get(currentQuestion);
       if (q) {
         questionHistory.update(h => [...h, {
           question: q,
-          counts: final.counts,
-          responses: final.responses,
+          settledOption: settledOption ?? null,
+          votes: get(liveVotes),
         }]);
       }
     });
@@ -104,40 +123,38 @@
 
   onDestroy(() => {
     if (revealTimeout) clearTimeout(revealTimeout);
-    socket.off("connect_error");
-    socket.off("disconnect");
-    socket.off("connect");
-    socket.off("room:updated");
-    socket.off("game:started");
-    socket.off("turn:changed");
-    socket.off("question:new");
-    socket.off("response:update");
-    socket.off("question:ended");
-    socket.off("host:disconnected");
-    socket.off("room:ended");
     if (hostTimer) clearInterval(hostTimer);
+    if (countdownInterval) clearInterval(countdownInterval);
+    ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
+     "question:new","response:update","question:countdown","question:countdown:cancelled",
+     "question:ended","host:disconnected","room:ended"].forEach(e => socket.off(e));
   });
 
-  function vote(option: string) {
-    if ($hasVoted || !$currentQuestion) return;
-    selectedOption = option;
-    hasVoted.set(true);
+  function castVote(option: string) {
+    if (!$currentQuestion) return;
+    myVote.set(option);
     socket.emit("response:submit", { questionId: $currentQuestion.id, value: option });
   }
 
-  function submitFreetext() {
-    if (submitted || !freetextInput.trim() || !$currentQuestion) return;
-    submitted = true;
-    socket.emit("response:submit", { questionId: $currentQuestion.id, value: freetextInput.trim() });
-  }
+  // Votes grouped by option for display
+  let votesByOption = $derived(
+    ($currentQuestion?.options ?? []).map(opt => ({
+      option: opt,
+      voters: $liveVotes.filter(v => v.value === opt),
+      count: $liveVotes.filter(v => v.value === opt).length,
+    }))
+  );
 
-  let totalVotes = $derived(Object.values($voteCounts).reduce((a, b) => a + b, 0));
-  let charCount = $derived(freetextInput.length);
+  let agreedCount = $derived(
+    $currentQuestion
+      ? Math.max(...($currentQuestion.options ?? []).map(opt => $liveVotes.filter(v => v.value === opt).length))
+      : 0
+  );
 </script>
 
-<!-- Turn order reveal overlay -->
+<!-- Turn reveal overlay -->
 {#if showReveal}
-  <div class="reveal-overlay">
+  <div class="overlay">
     <div class="reveal-card">
       <div class="reveal-title">🎲 Player Turns!</div>
       <div class="reveal-subtitle">Turn order</div>
@@ -154,11 +171,11 @@
   </div>
 {/if}
 
-<!-- Active player's question picker modal -->
+<!-- Your turn picker modal -->
 {#if showPicker && isMyTurn && !$currentQuestion}
   <div class="modal-backdrop">
     <div class="modal">
-      <div class="your-turn-banner">🎤 It's your turn to ask!</div>
+      <div class="your-turn-banner">🎤 Your turn — ask something</div>
       <QuestionPicker {socket} onPushed={() => showPicker = false} />
     </div>
   </div>
@@ -166,80 +183,65 @@
 
 <main>
   {#if notInRoom}
-    <div class="error-screen">
-      <p>You're not in a room.</p>
+    <div class="fullscreen-center">
+      <p class="muted">You're not in a room.</p>
       <a href="/" class="btn-primary">Go home</a>
     </div>
   {:else}
     <div class="room-header">
-      <div class="room-code">{code}</div>
-      {#if $gameMode === "player-turns" && $turnOrder.length > 0 && !$currentQuestion}
-        <div class="turn-indicator">
-          {isMyTurn ? "Your turn to ask" : `${activeTurnNickname}'s turn`}
-        </div>
+      <span class="room-code">{code}</span>
+      {#if $turnOrder.length > 0 && !$currentQuestion && !$questionEnded}
+        <span class="turn-pill">{isMyTurn ? "Your turn" : `${activeTurnNickname}'s turn`}</span>
       {/if}
     </div>
 
     {#if connectionLost}
-      <div class="banner banner-error">Connection lost — trying to reconnect...</div>
+      <div class="banner error">Connection lost — trying to reconnect...</div>
+    {/if}
+    {#if $hostDisconnected && !$roomEnded}
+      <div class="banner warn">Host disconnected — waiting ({hostWaitSeconds}s)</div>
     {/if}
 
-    {#if $hostDisconnected && !$roomEnded}
-      <div class="banner banner-warn">
-        Host disconnected — waiting for reconnect ({hostWaitSeconds}s)
+    <!-- Countdown bar -->
+    {#if $countdown}
+      {@const pct = Math.round((countdownSeconds / 10) * 100)}
+      <div class="countdown-bar-wrap">
+        <div class="countdown-bar" style="width:{pct}%"></div>
+        <span class="countdown-text">
+          Settling on <strong>{$countdown.leadingOption}</strong> in {countdownSeconds}s — change your vote to stop it!
+        </span>
       </div>
     {/if}
 
     {#if !$currentQuestion || $questionEnded}
-      <section class="waiting">
-        {#if $questionEnded && $currentQuestion}
-          <h2>Round over!</h2>
-          {#if $currentQuestion.type === "vote"}
-            <div class="results">
-              {#each Object.entries($voteCounts).sort(([,a],[,b]) => b - a) as [opt, count]}
-                {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
-                <div class="result-bar">
-                  <span class="result-label">{opt}</span>
-                  <div class="bar-track">
-                    <div class="bar-fill" style="width:{pct}%"></div>
-                  </div>
-                  <span class="pct">{pct}%</span>
-                </div>
-              {/each}
-            </div>
-          {:else}
-            <div class="freetext-results">
-              {#each $freetextResponses as r}
-                <div class="freetext-item">{r}</div>
-              {/each}
-            </div>
-          {/if}
-          <p class="next-hint">Waiting for host to continue...</p>
-        {:else if $gameMode === "player-turns" && $turnOrder.length > 0}
-          {#if isMyTurn}
-            <div class="your-turn-msg">
-              <div>It's your turn!</div>
-              <button class="btn-primary" onclick={() => showPicker = true}>Ask a Question</button>
-            </div>
-          {:else}
-            <div class="waiting-msg">
-              <div class="pulse-dot"></div>
-              Waiting for <strong>{activeTurnNickname}</strong> to ask...
-            </div>
-            <ul class="player-list">
-              {#each $players as player (player.id)}
-                <li class="{player.id === $activePlayerId ? 'active-turn' : ''}">{player.nickname}</li>
-              {/each}
-            </ul>
-          {/if}
-        {:else}
-          <div class="waiting-msg">
-            <div class="pulse-dot"></div>
-            Waiting for the next question...
+      <section class="lobby">
+        {#if $questionEnded}
+          <div class="settled-banner">
+            ✅ Settled!
           </div>
-          <ul class="player-list">
-            {#each $players as player (player.id)}
-              <li>{player.nickname}</li>
+        {/if}
+
+        {#if $turnOrder.length === 0}
+          <div class="waiting-center">
+            <div class="pulse-dot"></div>
+            <span class="muted">Waiting for host to start...</span>
+          </div>
+          <ul class="player-chips">
+            {#each $players as p (p.id)}<li>{p.nickname}</li>{/each}
+          </ul>
+        {:else if isMyTurn}
+          <div class="your-turn-lobby">
+            <p class="your-turn-text">It's your turn to ask!</p>
+            <button class="btn-primary" onclick={() => showPicker = true}>Ask a Question</button>
+          </div>
+        {:else}
+          <div class="waiting-center">
+            <div class="pulse-dot"></div>
+            <span class="muted">Waiting for <strong>{activeTurnNickname}</strong> to ask...</span>
+          </div>
+          <ul class="player-chips">
+            {#each $players as p (p.id)}
+              <li class="{p.id === $activePlayerId ? 'active' : ''}">{p.nickname}</li>
             {/each}
           </ul>
         {/if}
@@ -248,57 +250,36 @@
     {:else}
       <section class="question">
         <h2>{$currentQuestion.prompt}</h2>
+        <p class="tally">{$liveVotes.length}/{$totalPlayers} voted · {agreedCount} agreed</p>
 
-        {#if $currentQuestion.type === "vote"}
-          {#if !$hasVoted}
-            <div class="options">
-              {#each ($currentQuestion.options ?? []) as option}
-                <button class="option-btn" onclick={() => vote(option)}>
-                  {option}
-                </button>
-              {/each}
-            </div>
-          {:else}
-            <p class="voted-msg">Voted for <strong>{selectedOption}</strong></p>
-            <div class="live-counts">
-              {#each Object.entries($voteCounts) as [opt, count]}
-                {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
-                <div class="bar-row">
-                  <span class="bar-label {opt === selectedOption ? 'chosen' : ''}">{opt}</span>
-                  <div class="bar-track">
-                    <div class="bar-fill" style="width:{pct}%"></div>
-                  </div>
-                  <span class="bar-count">{count}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
-
-        {:else}
-          {#if !submitted}
-            <form onsubmit={(e) => { e.preventDefault(); submitFreetext(); }} class="freetext-form">
-              <div class="textarea-wrap">
-                <textarea
-                  bind:value={freetextInput}
-                  placeholder="Type your answer..."
-                  maxlength="300"
-                  rows="4"
-                ></textarea>
-                <span class="char-count {charCount > 270 ? 'near-limit' : ''}">{charCount}/300</span>
+        <div class="options">
+          {#each votesByOption as { option, voters, count }}
+            {@const isChosen = $myVote === option}
+            {@const pct = $totalPlayers > 0 ? Math.round((count / $totalPlayers) * 100) : 0}
+            <button
+              class="option-card {isChosen ? 'chosen' : ''}"
+              onclick={() => castVote(option)}
+            >
+              <div class="option-top">
+                <span class="option-label">{option}</span>
+                <span class="option-count">{count}</span>
               </div>
-              <button class="btn-primary" type="submit" disabled={!freetextInput.trim()}>Submit</button>
-            </form>
-          {:else}
-            <p class="voted-msg">Answer submitted!</p>
-            <div class="freetext-live">
-              {#each $freetextResponses as r}
-                <div class="freetext-item">{r}</div>
-              {/each}
-              {#if $freetextResponses.length <= 1}
-                <p class="others-hint">Other answers will appear here as people submit...</p>
+              <div class="option-bar-track">
+                <div class="option-bar-fill" style="width:{pct}%"></div>
+              </div>
+              {#if voters.length > 0}
+                <div class="voter-names">
+                  {#each voters as v}
+                    <span class="voter-chip {v.playerId === $myPlayerId ? 'me' : ''}">{v.nickname}</span>
+                  {/each}
+                </div>
               {/if}
-            </div>
-          {/if}
+            </button>
+          {/each}
+        </div>
+
+        {#if $myVote}
+          <p class="change-hint">Tap any option to change your vote</p>
         {/if}
       </section>
     {/if}
@@ -315,14 +296,13 @@
     margin: 0 auto;
   }
 
-  .error-screen {
+  .fullscreen-center {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 1.5rem;
-    color: #888;
   }
 
   .room-header {
@@ -333,14 +313,9 @@
     flex-wrap: wrap;
   }
 
-  .room-code {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #ff4d00;
-    letter-spacing: 0.08em;
-  }
+  .room-code { font-size: 1.1rem; font-weight: 700; color: #ff4d00; letter-spacing: 0.08em; }
 
-  .turn-indicator {
+  .turn-pill {
     font-size: 0.8rem;
     font-weight: 600;
     padding: 0.25rem 0.6rem;
@@ -352,40 +327,70 @@
 
   .banner {
     border-radius: 0.5rem;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.75rem;
     font-size: 0.875rem;
     text-align: center;
   }
 
-  .banner-warn { background: #2a1500; border: 1px solid #ff4d00; color: #ffaa77; }
-  .banner-error { background: #1a0a0a; border: 1px solid #8b0000; color: #ff6b6b; }
+  .banner.warn { background: #2a1500; border: 1px solid #ff4d00; color: #ffaa77; }
+  .banner.error { background: #1a0a0a; border: 1px solid #8b0000; color: #ff6b6b; }
 
-  .waiting {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1.5rem;
+  /* Countdown */
+  .countdown-bar-wrap {
+    position: relative;
+    background: #111;
+    border: 1px solid #ff4d00;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin-bottom: 1rem;
+    padding: 0.6rem 0.9rem;
   }
 
-  .waiting-msg {
+  .countdown-bar {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 77, 0, 0.15);
+    transition: width 0.2s linear;
+    pointer-events: none;
+  }
+
+  .countdown-text {
+    position: relative;
+    font-size: 0.875rem;
+    color: #ffaa77;
+  }
+
+  /* Lobby */
+  .lobby { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.25rem; }
+
+  .settled-banner {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #5dde5d;
+    text-align: center;
+  }
+
+  .waiting-center {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     color: #888;
-    font-size: 1rem;
   }
 
-  .your-turn-msg {
+  .your-turn-lobby {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 1rem;
-    font-size: 1.25rem;
+    text-align: center;
+  }
+
+  .your-turn-text {
+    font-size: 1.2rem;
     font-weight: 700;
     color: #ff4d00;
+    margin: 0;
   }
 
   .pulse-dot {
@@ -402,7 +407,7 @@
     50% { opacity: 0.4; transform: scale(0.8); }
   }
 
-  .player-list {
+  .player-chips {
     list-style: none;
     padding: 0;
     margin: 0;
@@ -412,7 +417,7 @@
     justify-content: center;
   }
 
-  .player-list li {
+  .player-chips li {
     background: #1e1e1e;
     padding: 0.35rem 0.8rem;
     border-radius: 2rem;
@@ -420,109 +425,85 @@
     color: #aaa;
   }
 
-  .player-list li.active-turn {
+  .player-chips li.active {
     background: #2a1500;
     border: 1px solid #ff4d00;
     color: #ff4d00;
   }
 
-  .next-hint, .others-hint {
-    color: #555;
-    font-size: 0.8rem;
-    text-align: center;
-    margin: 0;
-    font-style: italic;
-  }
-
+  /* Question */
   .question { flex: 1; display: flex; flex-direction: column; padding-top: 0.5rem; }
 
-  h2 { font-size: 1.6rem; font-weight: 800; margin: 0 0 1.5rem; line-height: 1.3; }
+  h2 { font-size: 1.5rem; font-weight: 800; margin: 0 0 0.5rem; line-height: 1.3; }
+
+  .tally { color: #666; font-size: 0.875rem; margin: 0 0 1.25rem; }
 
   .options { display: flex; flex-direction: column; gap: 0.75rem; }
 
-  .option-btn {
-    padding: 1.25rem 1rem;
+  .option-card {
+    width: 100%;
+    padding: 0.85rem 1rem;
     border-radius: 0.75rem;
-    border: 2px solid #2a2a2a;
+    border: 2px solid #222;
     background: #111;
-    color: #fff;
-    font-size: 1.1rem;
-    font-weight: 600;
     cursor: pointer;
     text-align: left;
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
-    min-height: 4rem;
-    width: 100%;
+    transition: border-color 0.15s, background 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
-  .option-btn:hover { border-color: #ff4d00; background: #1a0800; }
-  .option-btn:active { transform: scale(0.98); }
+  .option-card:hover { border-color: #444; }
+  .option-card:active { transform: scale(0.99); }
+  .option-card.chosen { border-color: #ff4d00; background: #1a0800; }
 
-  .voted-msg { color: #aaa; font-size: 0.95rem; margin: 0 0 1.25rem; }
-
-  .live-counts, .results { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; }
-
-  .bar-row, .result-bar {
-    display: grid;
-    grid-template-columns: 1fr 2fr 2.5rem;
+  .option-top {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 0.6rem;
   }
 
-  .bar-label, .result-label {
-    font-size: 0.9rem;
-    font-weight: 600;
+  .option-label { font-size: 1rem; font-weight: 600; color: #fff; }
+  .option-count { font-size: 0.875rem; font-weight: 700; color: #ff4d00; }
+
+  .option-bar-track {
+    height: 4px;
+    background: #222;
+    border-radius: 2px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
-  .bar-label.chosen { color: #ff4d00; }
-
-  .bar-track { background: #1e1e1e; border-radius: 0.25rem; height: 1.75rem; overflow: hidden; }
-
-  .bar-fill {
+  .option-bar-fill {
     height: 100%;
     background: #ff4d00;
-    border-radius: 0.25rem;
+    border-radius: 2px;
     transition: width 0.35s ease;
   }
 
-  .bar-count, .pct { font-size: 0.8rem; color: #888; text-align: right; }
-
-  .freetext-form { display: flex; flex-direction: column; gap: 0.75rem; }
-
-  .textarea-wrap { position: relative; }
-
-  textarea {
-    width: 100%;
-    padding: 0.85rem 1rem 2rem;
-    border-radius: 0.5rem;
-    border: 2px solid #333;
-    background: #1a1a1a;
-    color: #fff;
-    font-size: 1rem;
-    resize: none;
-    outline: none;
-    font-family: inherit;
-    box-sizing: border-box;
+  .voter-names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.1rem;
   }
 
-  textarea:focus { border-color: #ff4d00; }
-
-  .char-count {
-    position: absolute;
-    bottom: 0.5rem;
-    right: 0.75rem;
-    font-size: 0.7rem;
-    color: #555;
-    pointer-events: none;
+  .voter-chip {
+    font-size: 0.72rem;
+    color: #888;
+    background: #1e1e1e;
+    padding: 0.15rem 0.5rem;
+    border-radius: 2rem;
   }
 
-  .char-count.near-limit { color: #ff4d4d; }
+  .voter-chip.me { color: #ff4d00; background: #2a1500; }
+
+  .change-hint { color: #444; font-size: 0.75rem; text-align: center; margin: 0.75rem 0 0; }
+
+  .muted { color: #888; }
 
   .btn-primary {
-    padding: 1rem;
+    padding: 0.9rem 2rem;
     border-radius: 0.5rem;
     border: none;
     background: #ff4d00;
@@ -530,34 +511,11 @@
     font-size: 1rem;
     font-weight: 700;
     cursor: pointer;
-    width: 100%;
-    transition: opacity 0.15s;
   }
 
-  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  a.btn-primary { display: inline-block; text-decoration: none; text-align: center; }
 
-  .freetext-live, .freetext-results { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
-
-  .freetext-item {
-    background: #1e1e1e;
-    padding: 0.65rem 0.9rem;
-    border-radius: 0.5rem;
-    font-size: 0.95rem;
-    animation: slideIn 0.2s ease;
-  }
-
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  a.btn-primary {
-    display: inline-block;
-    text-decoration: none;
-    text-align: center;
-  }
-
-  /* Picker modal */
+  /* Modal */
   .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -584,16 +542,16 @@
   }
 
   .your-turn-banner {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #ff4d00;
     text-align: center;
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid #222;
   }
 
-  /* Turn reveal overlay */
-  .reveal-overlay {
+  /* Reveal overlay */
+  .overlay {
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.85);
@@ -637,13 +595,9 @@
   }
 
   .reveal-item.me { background: #2a1500; border: 1px solid #ff4d00; }
-
   .reveal-num { color: #555; font-size: 0.8rem; width: 1.25rem; }
   .reveal-name { flex: 1; font-weight: 600; }
-  .reveal-you { font-size: 0.7rem; font-weight: 700; color: #ff4d00; text-transform: uppercase; letter-spacing: 0.05em; }
+  .reveal-you { font-size: 0.7rem; font-weight: 700; color: #ff4d00; text-transform: uppercase; }
 
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
