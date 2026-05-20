@@ -15,6 +15,11 @@
     error = "";
     const socket = connect();
 
+    socket.once("connect_error", () => {
+      error = "Can't connect to server. Try again in a moment.";
+      loading = false;
+    });
+
     socket.once("room:created", ({ roomCode: rc }: { roomCode: string }) => {
       roomCode.set(rc);
     });
@@ -40,6 +45,11 @@
     loading = true;
     error = "";
     const socket = connect();
+
+    socket.once("connect_error", () => {
+      error = "Can't connect to server. Try again in a moment.";
+      loading = false;
+    });
 
     socket.once("room:joined", ({ roomCode: rc, players: pl }: { roomCode: string; players: any[] }) => {
       roomCode.set(rc);

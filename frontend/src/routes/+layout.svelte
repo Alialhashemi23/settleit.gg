@@ -26,5 +26,6 @@
 
 	:global(button) {
 		font-family: inherit;
+		touch-action: manipulation;
 	}
 </style>

@@ -15,6 +15,7 @@
   const code = $page.params.code;
 
   let socket = connect();
+  let connectionLost = $state(false);
   let showPicker = $state(false);
   let pickerTab: "custom" | "pack" = $state("custom");
   let questionType: "vote" | "freetext" = $state("vote");
@@ -27,6 +28,9 @@
   let totalVotes = $derived(Object.values($voteCounts).reduce((a, b) => a + b, 0));
 
   onMount(() => {
+    socket.on("connect_error", () => { connectionLost = true; });
+    socket.on("disconnect", () => { connectionLost = true; });
+    socket.on("connect", () => { connectionLost = false; });
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
     socket.on("question:new", ({ question }: any) => {
       currentQuestion.set(question);
@@ -60,6 +64,9 @@
   });
 
   onDestroy(() => {
+    socket.off("connect_error");
+    socket.off("disconnect");
+    socket.off("connect");
     socket.off("room:updated");
     socket.off("question:new");
     socket.off("response:update");
@@ -110,15 +117,24 @@
 
 <main>
   <header>
-    <div class="room-code">{code}</div>
+    <div class="header-code">{code}</div>
     <div class="player-count">{totalPlayers} player{totalPlayers !== 1 ? "s" : ""}</div>
     <button class="btn-danger-sm" onclick={endRoom}>End Room</button>
   </header>
 
+  {#if connectionLost}
+    <div class="banner-error">Connection lost — trying to reconnect...</div>
+  {/if}
+
   <div class="content">
     {#if !$currentQuestion || $questionEnded}
       <section class="lobby">
-        <h2>Waiting Room</h2>
+        <div class="code-card">
+          <div class="code-label">Room Code</div>
+          <div class="code-big">{code}</div>
+          <div class="code-url">settleit.gg</div>
+        </div>
+
         <ul class="player-list">
           {#each $players as player (player.id)}
             <li>{player.nickname}</li>
@@ -223,34 +239,42 @@
 
     {:else}
       <section class="active-question">
-        <h2>{$currentQuestion.prompt}</h2>
-        <p class="vote-tally">{totalVotes} / {totalPlayers} responded</p>
-
-        {#if $currentQuestion.type === "vote"}
-          <div class="bars">
-            {#each Object.entries($voteCounts) as [opt, count]}
-              {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
-              <div class="bar-row">
-                <span class="bar-label">{opt}</span>
-                <div class="bar-track">
-                  <div class="bar-fill" style="width: {pct}%"></div>
-                </div>
-                <span class="bar-count">{count}</span>
-              </div>
-            {/each}
+        <div class="question-layout">
+          <div class="question-left">
+            <div class="question-type-badge {$currentQuestion.type}">
+              {$currentQuestion.type === "vote" ? "Vote" : "Hot Take"}
+            </div>
+            <h2>{$currentQuestion.prompt}</h2>
+            <p class="vote-tally">{totalVotes} / {totalPlayers} responded</p>
+            <button class="btn-primary" onclick={nextQuestion}>Next Question</button>
           </div>
-        {:else}
-          <div class="freetext-list">
-            {#each $freetextResponses as r}
-              <div class="freetext-item">{r}</div>
-            {/each}
-            {#if $freetextResponses.length === 0}
-              <p class="empty">Waiting for answers...</p>
+
+          <div class="question-right">
+            {#if $currentQuestion.type === "vote"}
+              <div class="bars">
+                {#each Object.entries($voteCounts) as [opt, count]}
+                  {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
+                  <div class="bar-row">
+                    <span class="bar-label">{opt}</span>
+                    <div class="bar-track">
+                      <div class="bar-fill" style="width: {pct}%"></div>
+                    </div>
+                    <span class="bar-count">{count}</span>
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="freetext-list">
+                {#each $freetextResponses as r}
+                  <div class="freetext-item">{r}</div>
+                {/each}
+                {#if $freetextResponses.length === 0}
+                  <p class="empty">Waiting for answers...</p>
+                {/if}
+              </div>
             {/if}
           </div>
-        {/if}
-
-        <button class="btn-primary" onclick={nextQuestion}>Next Question</button>
+        </div>
       </section>
     {/if}
 
@@ -303,13 +327,94 @@
     flex-wrap: wrap;
   }
 
-  .room-code {
-    font-size: 2rem;
+  .header-code {
+    font-size: 1.1rem;
     font-weight: 900;
     letter-spacing: 0.1em;
     color: #ff4d00;
     flex: 1;
   }
+
+  .banner-error {
+    background: #1a0a0a;
+    border: 1px solid #8b0000;
+    border-radius: 0.5rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.875rem;
+    color: #ff6b6b;
+    text-align: center;
+  }
+
+  /* Big room code card */
+  .code-card {
+    background: #0f0f0f;
+    border: 2px solid #ff4d00;
+    border-radius: 1rem;
+    padding: 1.25rem 2rem;
+    text-align: center;
+    margin-bottom: 1.25rem;
+  }
+
+  .code-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #666;
+    margin-bottom: 0.4rem;
+  }
+
+  .code-big {
+    font-size: 3.5rem;
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    color: #ff4d00;
+    line-height: 1;
+  }
+
+  .code-url {
+    font-size: 0.8rem;
+    color: #444;
+    margin-top: 0.4rem;
+  }
+
+  /* Two-column active question layout */
+  .question-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 2rem;
+    align-items: start;
+  }
+
+  @media (max-width: 640px) {
+    .question-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .code-big { font-size: 2.5rem; }
+  }
+
+  .question-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .question-type-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    align-self: flex-start;
+  }
+
+  .question-type-badge.vote { background: #1a3a1a; color: #5dde5d; }
+  .question-type-badge.freetext { background: #1a1a3a; color: #7d9fff; }
+
+  .question-right { display: flex; flex-direction: column; }
 
   .player-count {
     color: #888;
@@ -318,9 +423,10 @@
 
   .content { flex: 1; }
 
-  .lobby h2, .active-question h2 {
+  .active-question h2 {
     font-size: 1.75rem;
-    margin: 0 0 1rem;
+    margin: 0;
+    line-height: 1.3;
   }
 
   .player-list {

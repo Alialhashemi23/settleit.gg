@@ -5,7 +5,7 @@
   import { get } from "svelte/store";
   import { connect } from "$lib/socket";
   import {
-    players, currentQuestion, voteCounts, freetextResponses,
+    roomCode, players, currentQuestion, voteCounts, freetextResponses,
     hasVoted, questionEnded, hostDisconnected, roomEnded, resetQuestionState,
     questionHistory,
   } from "$lib/stores";
@@ -17,8 +17,19 @@
   let submitted = $state(false);
   let hostWaitSeconds = $state(0);
   let hostTimer: ReturnType<typeof setInterval> | null = null;
+  let notInRoom = $state(false);
+  let connectionLost = $state(false);
 
   onMount(() => {
+    if (!get(roomCode)) {
+      notInRoom = true;
+      return;
+    }
+
+    socket.on("connect_error", () => { connectionLost = true; });
+    socket.on("disconnect", () => { connectionLost = true; });
+    socket.on("connect", () => { connectionLost = false; });
+
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
 
     socket.on("question:new", ({ question }: any) => {
@@ -68,6 +79,9 @@
   });
 
   onDestroy(() => {
+    socket.off("connect_error");
+    socket.off("disconnect");
+    socket.off("connect");
     socket.off("room:updated");
     socket.off("question:new");
     socket.off("response:update");
@@ -91,105 +105,123 @@
   }
 
   let totalVotes = $derived(Object.values($voteCounts).reduce((a, b) => a + b, 0));
+  let charCount = $derived(freetextInput.length);
 </script>
 
 <main>
-  <div class="room-code">{code}</div>
-
-  {#if $hostDisconnected && !$roomEnded}
-    <div class="banner">
-      Host disconnected — waiting for reconnect ({hostWaitSeconds}s)
+  {#if notInRoom}
+    <div class="error-screen">
+      <p>You're not in a room.</p>
+      <a href="/" class="btn-primary">Go home</a>
     </div>
-  {/if}
-
-  {#if !$currentQuestion || $questionEnded}
-    <section class="waiting">
-      {#if $questionEnded && $currentQuestion}
-        <h2>Round over!</h2>
-        {#if $currentQuestion.type === "vote"}
-          <div class="results">
-            {#each Object.entries($voteCounts).sort(([,a],[,b]) => b - a) as [opt, count]}
-              {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
-              <div class="result-bar">
-                <span class="result-label">{opt}</span>
-                <div class="bar-track">
-                  <div class="bar-fill" style="width:{pct}%"></div>
-                </div>
-                <span class="pct">{pct}%</span>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="freetext-results">
-            {#each $freetextResponses as r}
-              <div class="freetext-item">{r}</div>
-            {/each}
-          </div>
-        {/if}
-      {:else}
-        <div class="waiting-msg">
-          <div class="pulse-dot"></div>
-          Waiting for the next question...
-        </div>
-        <ul class="player-list">
-          {#each $players as player (player.id)}
-            <li>{player.nickname}</li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
-
   {:else}
-    <section class="question">
-      <h2>{$currentQuestion.prompt}</h2>
+    <div class="room-code">{code}</div>
 
-      {#if $currentQuestion.type === "vote"}
-        {#if !$hasVoted}
-          <div class="options">
-            {#each ($currentQuestion.options ?? []) as option}
-              <button class="option-btn" onclick={() => vote(option)}>
-                {option}
-              </button>
-            {/each}
-          </div>
-        {:else}
-          <p class="voted-msg">Voted for <strong>{selectedOption}</strong></p>
-          <div class="live-counts">
-            {#each Object.entries($voteCounts) as [opt, count]}
-              {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
-              <div class="bar-row">
-                <span class="bar-label {opt === selectedOption ? 'chosen' : ''}">{opt}</span>
-                <div class="bar-track">
-                  <div class="bar-fill" style="width:{pct}%"></div>
+    {#if connectionLost}
+      <div class="banner banner-error">Connection lost — trying to reconnect...</div>
+    {/if}
+
+    {#if $hostDisconnected && !$roomEnded}
+      <div class="banner banner-warn">
+        Host disconnected — waiting for reconnect ({hostWaitSeconds}s)
+      </div>
+    {/if}
+
+    {#if !$currentQuestion || $questionEnded}
+      <section class="waiting">
+        {#if $questionEnded && $currentQuestion}
+          <h2>Round over!</h2>
+          {#if $currentQuestion.type === "vote"}
+            <div class="results">
+              {#each Object.entries($voteCounts).sort(([,a],[,b]) => b - a) as [opt, count]}
+                {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
+                <div class="result-bar">
+                  <span class="result-label">{opt}</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width:{pct}%"></div>
+                  </div>
+                  <span class="pct">{pct}%</span>
                 </div>
-                <span class="bar-count">{count}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-      {:else}
-        {#if !submitted}
-          <form onsubmit={(e) => { e.preventDefault(); submitFreetext(); }} class="freetext-form">
-            <textarea
-              bind:value={freetextInput}
-              placeholder="Type your answer..."
-              maxlength="300"
-              rows="3"
-              autofocus
-            ></textarea>
-            <button class="btn-primary" type="submit">Submit</button>
-          </form>
+              {/each}
+            </div>
+          {:else}
+            <div class="freetext-results">
+              {#each $freetextResponses as r}
+                <div class="freetext-item">{r}</div>
+              {/each}
+            </div>
+          {/if}
+          <p class="next-hint">Waiting for host to continue...</p>
         {:else}
-          <p class="voted-msg">Answer submitted!</p>
-          <div class="freetext-live">
-            {#each $freetextResponses as r}
-              <div class="freetext-item">{r}</div>
-            {/each}
+          <div class="waiting-msg">
+            <div class="pulse-dot"></div>
+            Waiting for the next question...
           </div>
+          <ul class="player-list">
+            {#each $players as player (player.id)}
+              <li>{player.nickname}</li>
+            {/each}
+          </ul>
         {/if}
-      {/if}
-    </section>
+      </section>
+
+    {:else}
+      <section class="question">
+        <h2>{$currentQuestion.prompt}</h2>
+
+        {#if $currentQuestion.type === "vote"}
+          {#if !$hasVoted}
+            <div class="options">
+              {#each ($currentQuestion.options ?? []) as option}
+                <button class="option-btn" onclick={() => vote(option)}>
+                  {option}
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <p class="voted-msg">Voted for <strong>{selectedOption}</strong></p>
+            <div class="live-counts">
+              {#each Object.entries($voteCounts) as [opt, count]}
+                {@const pct = Math.round((count / Math.max(1, totalVotes)) * 100)}
+                <div class="bar-row">
+                  <span class="bar-label {opt === selectedOption ? 'chosen' : ''}">{opt}</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width:{pct}%"></div>
+                  </div>
+                  <span class="bar-count">{count}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+        {:else}
+          {#if !submitted}
+            <form onsubmit={(e) => { e.preventDefault(); submitFreetext(); }} class="freetext-form">
+              <div class="textarea-wrap">
+                <textarea
+                  bind:value={freetextInput}
+                  placeholder="Type your answer..."
+                  maxlength="300"
+                  rows="4"
+                ></textarea>
+                <span class="char-count {charCount > 270 ? 'near-limit' : ''}">{charCount}/300</span>
+              </div>
+              <button class="btn-primary" type="submit" disabled={!freetextInput.trim()}>Submit</button>
+            </form>
+          {:else}
+            <p class="voted-msg">Answer submitted!</p>
+            <div class="freetext-live">
+              {#each $freetextResponses as r}
+                <div class="freetext-item">{r}</div>
+              {/each}
+              {#if $freetextResponses.length <= 1}
+                <p class="others-hint">Other answers will appear here as people submit...</p>
+              {/if}
+            </div>
+          {/if}
+        {/if}
+      </section>
+    {/if}
   {/if}
 </main>
 
@@ -203,24 +235,43 @@
     margin: 0 auto;
   }
 
+  .error-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    color: #888;
+  }
+
   .room-code {
     font-size: 1.1rem;
     font-weight: 700;
     color: #ff4d00;
     letter-spacing: 0.08em;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     text-align: center;
   }
 
   .banner {
-    background: #2a1500;
-    border: 1px solid #ff4d00;
     border-radius: 0.5rem;
     padding: 0.75rem 1rem;
     margin-bottom: 1rem;
     font-size: 0.875rem;
     text-align: center;
+  }
+
+  .banner-warn {
+    background: #2a1500;
+    border: 1px solid #ff4d00;
     color: #ffaa77;
+  }
+
+  .banner-error {
+    background: #1a0a0a;
+    border: 1px solid #8b0000;
+    color: #ff6b6b;
   }
 
   .waiting {
@@ -245,6 +296,7 @@
     height: 10px;
     border-radius: 50%;
     background: #ff4d00;
+    flex-shrink: 0;
     animation: pulse 1.5s ease-in-out infinite;
   }
 
@@ -271,15 +323,23 @@
     color: #aaa;
   }
 
+  .next-hint, .others-hint {
+    color: #555;
+    font-size: 0.8rem;
+    text-align: center;
+    margin: 0;
+    font-style: italic;
+  }
+
   .question {
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding-top: 1rem;
+    padding-top: 0.5rem;
   }
 
   h2 {
-    font-size: 1.5rem;
+    font-size: 1.6rem;
     font-weight: 800;
     margin: 0 0 1.5rem;
     line-height: 1.3;
@@ -292,23 +352,22 @@
   }
 
   .option-btn {
-    padding: 1.25rem;
+    padding: 1.25rem 1rem;
     border-radius: 0.75rem;
-    border: 2px solid #333;
+    border: 2px solid #2a2a2a;
     background: #111;
     color: #fff;
     font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
     text-align: left;
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
     min-height: 4rem;
+    width: 100%;
   }
 
-  .option-btn:hover {
-    border-color: #ff4d00;
-    background: #1a0800;
-  }
+  .option-btn:hover { border-color: #ff4d00; background: #1a0800; }
+  .option-btn:active { transform: scale(0.98); }
 
   .voted-msg {
     color: #aaa;
@@ -366,19 +425,36 @@
     gap: 0.75rem;
   }
 
+  .textarea-wrap {
+    position: relative;
+  }
+
   textarea {
-    padding: 0.85rem 1rem;
+    width: 100%;
+    padding: 0.85rem 1rem 2rem;
     border-radius: 0.5rem;
     border: 2px solid #333;
     background: #1a1a1a;
     color: #fff;
     font-size: 1rem;
-    resize: vertical;
+    resize: none;
     outline: none;
     font-family: inherit;
+    box-sizing: border-box;
   }
 
   textarea:focus { border-color: #ff4d00; }
+
+  .char-count {
+    position: absolute;
+    bottom: 0.5rem;
+    right: 0.75rem;
+    font-size: 0.7rem;
+    color: #555;
+    pointer-events: none;
+  }
+
+  .char-count.near-limit { color: #ff4d4d; }
 
   .btn-primary {
     padding: 1rem;
@@ -389,13 +465,17 @@
     font-size: 1rem;
     font-weight: 700;
     cursor: pointer;
+    width: 100%;
+    transition: opacity 0.15s;
   }
+
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .freetext-live, .freetext-results {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    margin-top: 1rem;
+    margin-top: 0.5rem;
   }
 
   .freetext-item {
@@ -407,7 +487,17 @@
   }
 
   @keyframes slideIn {
-    from { opacity: 0; transform: translateY(6px); }
+    from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+
+  .btn-primary {
+    touch-action: manipulation;
+  }
+
+  a.btn-primary {
+    display: inline-block;
+    text-decoration: none;
+    text-align: center;
   }
 </style>
