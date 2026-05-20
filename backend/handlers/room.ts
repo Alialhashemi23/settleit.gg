@@ -8,21 +8,30 @@ import {
   setRoomStatus,
   destroyRoom,
   touchRoom,
+  advanceTurnInDB,
+  getActiveTurnPlayerId,
 } from "../rooms";
 import { db } from "../db";
 
-// Track host reconnect timers: roomCode → timer
 const reconnectTimers = new Map<string, Timer>();
 
 export function registerRoomHandlers(io: Server, socket: Socket) {
-  socket.on("room:create", ({ nickname }: { nickname: string }) => {
-    const code = createRoom(socket.id);
-    addPlayer(code, socket.id, nickname);
+  socket.on("room:create", ({ nickname, mode }: { nickname: string; mode?: string }) => {
+    const roomMode = mode === "player-turns" ? "player-turns" : "host-picks";
+    let code: string;
+    try {
+      code = createRoom(socket.id, roomMode);
+    } catch {
+      socket.emit("error", { message: "room_create_failed" });
+      return;
+    }
+    const playerId = addPlayer(code, socket.id, nickname);
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.isHost = true;
+    socket.data.playerId = playerId;
     socket.emit("room:created", { roomCode: code });
-    socket.emit("room:joined", { roomCode: code, players: getRoomPlayers(code) });
+    socket.emit("room:joined", { roomCode: code, players: getRoomPlayers(code), mode: roomMode, playerId });
   });
 
   socket.on("room:join", ({ roomCode, nickname }: { roomCode: string; nickname: string }) => {
@@ -38,17 +47,17 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
       return;
     }
 
-    addPlayer(code, socket.id, nickname);
+    const playerId = addPlayer(code, socket.id, nickname);
     touchRoom(code);
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.isHost = false;
+    socket.data.playerId = playerId;
 
     const players = getRoomPlayers(code);
-    socket.emit("room:joined", { roomCode: code, players });
+    socket.emit("room:joined", { roomCode: code, players, mode: room.mode, playerId });
     socket.to(code).emit("room:updated", { players });
 
-    // If there's an active question, send it to the joining player
     const activeQ = db.query(
       "SELECT * FROM questions WHERE room_id = ? ORDER BY created_at DESC LIMIT 1"
     ).get(code) as any;
@@ -70,7 +79,6 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
       return;
     }
 
-    // Clear the pending timer
     const timer = reconnectTimers.get(code);
     if (timer) {
       clearTimeout(timer);
@@ -78,15 +86,48 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     }
 
     db.run("UPDATE rooms SET host_socket_id = ?, status = 'lobby', host_reconnect_deadline = NULL WHERE id = ?", [socket.id, code]);
-    addPlayer(code, socket.id, nickname);
+    const playerId = addPlayer(code, socket.id, nickname);
     touchRoom(code);
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.isHost = true;
+    socket.data.playerId = playerId;
 
     const players = getRoomPlayers(code);
-    socket.emit("room:joined", { roomCode: code, players });
+    socket.emit("room:joined", { roomCode: code, players, mode: room.mode, playerId });
     io.to(code).emit("room:updated", { players });
+  });
+
+  socket.on("game:start", () => {
+    const code = socket.data.roomCode;
+    if (!code) return;
+    const room = getRoom(code);
+    if (!room || room.host_socket_id !== socket.id) {
+      socket.emit("error", { message: "not_authorized" });
+      return;
+    }
+    if (room.mode !== "player-turns") return;
+
+    const players = getRoomPlayers(code);
+    if (players.length < 2) {
+      socket.emit("error", { message: "not_enough_players" });
+      return;
+    }
+
+    const shuffled = [...players].sort(() => Math.random() - 0.5);
+    const turnOrder = shuffled.map(p => p.id);
+
+    db.run(
+      "UPDATE rooms SET turn_order = ?, turn_index = 0, last_active = ? WHERE id = ?",
+      [JSON.stringify(turnOrder), Date.now(), code]
+    );
+
+    const first = shuffled[0];
+    io.to(code).emit("game:started", {
+      turnOrder: shuffled,
+      activePlayerId: first.id,
+      activeNickname: first.nickname,
+    });
   });
 
   socket.on("room:end", () => {
@@ -108,7 +149,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     const room = getRoom(code);
     if (!room) return;
 
-    removePlayerBySocket(socket.id);
+    const removed = removePlayerBySocket(socket.id);
     const players = getRoomPlayers(code);
 
     if (room.host_socket_id === socket.id) {
@@ -131,6 +172,17 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     } else {
       touchRoom(code);
       io.to(code).emit("room:updated", { players });
+
+      // In player-turns mode, if the disconnected player was the active one, advance the turn
+      if (room.mode === "player-turns" && room.status === "lobby" && removed) {
+        const activeId = getActiveTurnPlayerId(room);
+        if (activeId === removed.playerId) {
+          const next = advanceTurnInDB(code);
+          if (next) {
+            io.to(code).emit("turn:changed", next);
+          }
+        }
+      }
     }
   });
 }

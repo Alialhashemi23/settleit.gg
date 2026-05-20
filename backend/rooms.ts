@@ -8,17 +8,19 @@ export function generateRoomCode(): string {
   return `${adj}-${num}`;
 }
 
-export function createRoom(hostSocketId: string): string {
+export function createRoom(hostSocketId: string, mode: "host-picks" | "player-turns" = "host-picks"): string {
   let code: string;
-  // Retry on collision (extremely rare)
+  let attempts = 0;
   do {
     code = generateRoomCode();
+    attempts++;
+    if (attempts > 5) throw new Error("room_code_collision");
   } while (db.query("SELECT id FROM rooms WHERE id = ?").get(code));
 
   const now = Date.now();
   db.run(
-    "INSERT INTO rooms (id, host_socket_id, status, created_at, last_active) VALUES (?, ?, 'lobby', ?, ?)",
-    [code, hostSocketId, now, now]
+    "INSERT INTO rooms (id, host_socket_id, status, mode, created_at, last_active) VALUES (?, ?, 'lobby', ?, ?, ?)",
+    [code, hostSocketId, mode, now, now]
   );
   return code;
 }
@@ -66,10 +68,44 @@ export function destroyRoom(code: string) {
   db.run("DELETE FROM rooms WHERE id = ?", [code]);
 }
 
+export function getActiveTurnPlayerId(room: Room): string | null {
+  if (!room.turn_order || room.turn_index === null || room.turn_index === undefined) return null;
+  const order: string[] = JSON.parse(room.turn_order);
+  return order[room.turn_index] ?? null;
+}
+
+export function advanceTurnInDB(code: string): { activePlayerId: string; activeNickname: string; turnIndex: number } | null {
+  const room = getRoom(code);
+  if (!room || !room.turn_order || room.turn_index === null) return null;
+
+  const turnOrder: string[] = JSON.parse(room.turn_order);
+  const connected = new Set(
+    (db.query("SELECT id FROM players WHERE room_id = ?").all(code) as { id: string }[]).map(p => p.id)
+  );
+
+  let nextIndex = (room.turn_index + 1) % turnOrder.length;
+  for (let i = 0; i < turnOrder.length; i++) {
+    if (connected.has(turnOrder[nextIndex])) break;
+    nextIndex = (nextIndex + 1) % turnOrder.length;
+  }
+
+  if (!connected.has(turnOrder[nextIndex])) return null;
+
+  db.run("UPDATE rooms SET turn_index = ?, last_active = ? WHERE id = ?", [nextIndex, Date.now(), code]);
+
+  const active = db.query("SELECT id, nickname FROM players WHERE id = ?").get(turnOrder[nextIndex]) as { id: string; nickname: string } | null;
+  if (!active) return null;
+
+  return { activePlayerId: active.id, activeNickname: active.nickname, turnIndex: nextIndex };
+}
+
 export interface Room {
   id: string;
   host_socket_id: string;
   status: string;
+  mode: "host-picks" | "player-turns";
+  turn_order: string | null;
+  turn_index: number | null;
   host_reconnect_deadline: number | null;
   created_at: number;
   last_active: number;

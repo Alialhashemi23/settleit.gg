@@ -7,6 +7,9 @@ db.run(`
     id TEXT PRIMARY KEY,
     host_socket_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'lobby',
+    mode TEXT NOT NULL DEFAULT 'host-picks',
+    turn_order TEXT,
+    turn_index INTEGER,
     host_reconnect_deadline INTEGER,
     created_at INTEGER NOT NULL,
     last_active INTEGER NOT NULL
@@ -43,6 +46,9 @@ db.run(`
     submitted_at INTEGER NOT NULL
   )
 `);
+
+db.run(`CREATE INDEX IF NOT EXISTS idx_players_room_id ON players(room_id)`);
+db.run(`CREATE INDEX IF NOT EXISTS idx_responses_question_id ON responses(question_id)`);
 
 // Room cleanup: delete rooms inactive for 2+ hours
 setInterval(() => {

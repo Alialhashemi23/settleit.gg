@@ -7,8 +7,9 @@
   import {
     roomCode, players, currentQuestion, voteCounts, freetextResponses,
     hasVoted, questionEnded, hostDisconnected, roomEnded, resetQuestionState,
-    questionHistory,
+    questionHistory, gameMode, myPlayerId, turnOrder, activePlayerId,
   } from "$lib/stores";
+  import QuestionPicker from "$lib/QuestionPicker.svelte";
 
   const code = $page.params.code;
   let socket = connect();
@@ -19,6 +20,12 @@
   let hostTimer: ReturnType<typeof setInterval> | null = null;
   let notInRoom = $state(false);
   let connectionLost = $state(false);
+  let showPicker = $state(false);
+  let showReveal = $state(false);
+  let revealTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  let isMyTurn = $derived($gameMode === "player-turns" && $activePlayerId !== null && $activePlayerId === $myPlayerId);
+  let activeTurnNickname = $derived($turnOrder.find(p => p.id === $activePlayerId)?.nickname ?? "");
 
   onMount(() => {
     if (!get(roomCode)) {
@@ -29,8 +36,24 @@
     socket.on("connect_error", () => { connectionLost = true; });
     socket.on("disconnect", () => { connectionLost = true; });
     socket.on("connect", () => { connectionLost = false; });
-
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
+
+    socket.on("game:started", ({ turnOrder: order, activePlayerId: apId }: any) => {
+      turnOrder.set(order);
+      activePlayerId.set(apId);
+      showReveal = true;
+      revealTimeout = setTimeout(() => {
+        showReveal = false;
+        if (apId === get(myPlayerId)) showPicker = true;
+      }, 2500);
+    });
+
+    socket.on("turn:changed", ({ activePlayerId: apId }: any) => {
+      activePlayerId.set(apId);
+      if (apId === get(myPlayerId)) {
+        showPicker = true;
+      }
+    });
 
     socket.on("question:new", ({ question }: any) => {
       currentQuestion.set(question);
@@ -41,6 +64,7 @@
       selectedOption = null;
       freetextInput = "";
       submitted = false;
+      showPicker = false;
     });
 
     socket.on("response:update", ({ counts, responses }: any) => {
@@ -79,10 +103,13 @@
   });
 
   onDestroy(() => {
+    if (revealTimeout) clearTimeout(revealTimeout);
     socket.off("connect_error");
     socket.off("disconnect");
     socket.off("connect");
     socket.off("room:updated");
+    socket.off("game:started");
+    socket.off("turn:changed");
     socket.off("question:new");
     socket.off("response:update");
     socket.off("question:ended");
@@ -108,6 +135,35 @@
   let charCount = $derived(freetextInput.length);
 </script>
 
+<!-- Turn order reveal overlay -->
+{#if showReveal}
+  <div class="reveal-overlay">
+    <div class="reveal-card">
+      <div class="reveal-title">🎲 Player Turns!</div>
+      <div class="reveal-subtitle">Turn order</div>
+      <ol class="reveal-list">
+        {#each $turnOrder as player, i}
+          <li class="reveal-item {player.id === $myPlayerId ? 'me' : ''}">
+            <span class="reveal-num">{i + 1}</span>
+            <span class="reveal-name">{player.nickname}</span>
+            {#if player.id === $myPlayerId}<span class="reveal-you">YOU</span>{/if}
+          </li>
+        {/each}
+      </ol>
+    </div>
+  </div>
+{/if}
+
+<!-- Active player's question picker modal -->
+{#if showPicker && isMyTurn && !$currentQuestion}
+  <div class="modal-backdrop">
+    <div class="modal">
+      <div class="your-turn-banner">🎤 It's your turn to ask!</div>
+      <QuestionPicker {socket} onPushed={() => showPicker = false} />
+    </div>
+  </div>
+{/if}
+
 <main>
   {#if notInRoom}
     <div class="error-screen">
@@ -115,7 +171,14 @@
       <a href="/" class="btn-primary">Go home</a>
     </div>
   {:else}
-    <div class="room-code">{code}</div>
+    <div class="room-header">
+      <div class="room-code">{code}</div>
+      {#if $gameMode === "player-turns" && $turnOrder.length > 0 && !$currentQuestion}
+        <div class="turn-indicator">
+          {isMyTurn ? "Your turn to ask" : `${activeTurnNickname}'s turn`}
+        </div>
+      {/if}
+    </div>
 
     {#if connectionLost}
       <div class="banner banner-error">Connection lost — trying to reconnect...</div>
@@ -152,6 +215,23 @@
             </div>
           {/if}
           <p class="next-hint">Waiting for host to continue...</p>
+        {:else if $gameMode === "player-turns" && $turnOrder.length > 0}
+          {#if isMyTurn}
+            <div class="your-turn-msg">
+              <div>It's your turn!</div>
+              <button class="btn-primary" onclick={() => showPicker = true}>Ask a Question</button>
+            </div>
+          {:else}
+            <div class="waiting-msg">
+              <div class="pulse-dot"></div>
+              Waiting for <strong>{activeTurnNickname}</strong> to ask...
+            </div>
+            <ul class="player-list">
+              {#each $players as player (player.id)}
+                <li class="{player.id === $activePlayerId ? 'active-turn' : ''}">{player.nickname}</li>
+              {/each}
+            </ul>
+          {/if}
         {:else}
           <div class="waiting-msg">
             <div class="pulse-dot"></div>
@@ -245,13 +325,29 @@
     color: #888;
   }
 
+  .room-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
   .room-code {
     font-size: 1.1rem;
     font-weight: 700;
     color: #ff4d00;
     letter-spacing: 0.08em;
-    margin-bottom: 1rem;
-    text-align: center;
+  }
+
+  .turn-indicator {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    border-radius: 2rem;
+    background: #1a1a1a;
+    color: #ff4d00;
+    border: 1px solid #333;
   }
 
   .banner {
@@ -262,17 +358,8 @@
     text-align: center;
   }
 
-  .banner-warn {
-    background: #2a1500;
-    border: 1px solid #ff4d00;
-    color: #ffaa77;
-  }
-
-  .banner-error {
-    background: #1a0a0a;
-    border: 1px solid #8b0000;
-    color: #ff6b6b;
-  }
+  .banner-warn { background: #2a1500; border: 1px solid #ff4d00; color: #ffaa77; }
+  .banner-error { background: #1a0a0a; border: 1px solid #8b0000; color: #ff6b6b; }
 
   .waiting {
     flex: 1;
@@ -289,6 +376,16 @@
     gap: 0.75rem;
     color: #888;
     font-size: 1rem;
+  }
+
+  .your-turn-msg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #ff4d00;
   }
 
   .pulse-dot {
@@ -323,6 +420,12 @@
     color: #aaa;
   }
 
+  .player-list li.active-turn {
+    background: #2a1500;
+    border: 1px solid #ff4d00;
+    color: #ff4d00;
+  }
+
   .next-hint, .others-hint {
     color: #555;
     font-size: 0.8rem;
@@ -331,25 +434,11 @@
     font-style: italic;
   }
 
-  .question {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding-top: 0.5rem;
-  }
+  .question { flex: 1; display: flex; flex-direction: column; padding-top: 0.5rem; }
 
-  h2 {
-    font-size: 1.6rem;
-    font-weight: 800;
-    margin: 0 0 1.5rem;
-    line-height: 1.3;
-  }
+  h2 { font-size: 1.6rem; font-weight: 800; margin: 0 0 1.5rem; line-height: 1.3; }
 
-  .options {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
+  .options { display: flex; flex-direction: column; gap: 0.75rem; }
 
   .option-btn {
     padding: 1.25rem 1rem;
@@ -369,18 +458,9 @@
   .option-btn:hover { border-color: #ff4d00; background: #1a0800; }
   .option-btn:active { transform: scale(0.98); }
 
-  .voted-msg {
-    color: #aaa;
-    font-size: 0.95rem;
-    margin: 0 0 1.25rem;
-  }
+  .voted-msg { color: #aaa; font-size: 0.95rem; margin: 0 0 1.25rem; }
 
-  .live-counts, .results {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    margin-bottom: 1.5rem;
-  }
+  .live-counts, .results { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; }
 
   .bar-row, .result-bar {
     display: grid;
@@ -399,12 +479,7 @@
 
   .bar-label.chosen { color: #ff4d00; }
 
-  .bar-track {
-    background: #1e1e1e;
-    border-radius: 0.25rem;
-    height: 1.75rem;
-    overflow: hidden;
-  }
+  .bar-track { background: #1e1e1e; border-radius: 0.25rem; height: 1.75rem; overflow: hidden; }
 
   .bar-fill {
     height: 100%;
@@ -413,21 +488,11 @@
     transition: width 0.35s ease;
   }
 
-  .bar-count, .pct {
-    font-size: 0.8rem;
-    color: #888;
-    text-align: right;
-  }
+  .bar-count, .pct { font-size: 0.8rem; color: #888; text-align: right; }
 
-  .freetext-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
+  .freetext-form { display: flex; flex-direction: column; gap: 0.75rem; }
 
-  .textarea-wrap {
-    position: relative;
-  }
+  .textarea-wrap { position: relative; }
 
   textarea {
     width: 100%;
@@ -471,12 +536,7 @@
 
   .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .freetext-live, .freetext-results {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
+  .freetext-live, .freetext-results { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
 
   .freetext-item {
     background: #1e1e1e;
@@ -491,13 +551,99 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
-  .btn-primary {
-    touch-action: manipulation;
-  }
-
   a.btn-primary {
     display: inline-block;
     text-decoration: none;
     text-align: center;
+  }
+
+  /* Picker modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 1rem;
+  }
+
+  .modal {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  .your-turn-banner {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #ff4d00;
+    text-align: center;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #222;
+  }
+
+  /* Turn reveal overlay */
+  .reveal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .reveal-card {
+    background: #111;
+    border: 2px solid #ff4d00;
+    border-radius: 1.25rem;
+    padding: 2rem;
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+  }
+
+  .reveal-title { font-size: 1.75rem; font-weight: 900; margin-bottom: 0.5rem; }
+  .reveal-subtitle { color: #888; font-size: 0.875rem; margin-bottom: 1.25rem; text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .reveal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: left;
+  }
+
+  .reveal-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    background: #1a1a1a;
+  }
+
+  .reveal-item.me { background: #2a1500; border: 1px solid #ff4d00; }
+
+  .reveal-num { color: #555; font-size: 0.8rem; width: 1.25rem; }
+  .reveal-name { flex: 1; font-weight: 600; }
+  .reveal-you { font-size: 0.7rem; font-weight: 700; color: #ff4d00; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 </style>

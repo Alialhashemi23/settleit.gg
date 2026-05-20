@@ -29,6 +29,12 @@ export const hostDisconnected = writable<{ deadline: number } | null>(null);
 export const roomEnded = writable(false);
 export const questionHistory = writable<HistoryEntry[]>([]);
 
+// Player Turns mode
+export const gameMode = writable<"host-picks" | "player-turns">("host-picks");
+export const myPlayerId = writable<string | null>(null);
+export const turnOrder = writable<Player[]>([]);
+export const activePlayerId = writable<string | null>(null);
+
 export function resetQuestionState() {
   currentQuestion.set(null);
   voteCounts.set({});
