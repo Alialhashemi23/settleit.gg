@@ -83,6 +83,26 @@ Goal: real-world validation before announcing
 
 ---
 
+## Phase 6 — UI Beautification 🎨🔥
+Goal: make the app feel like a late-night bonfire experience — warm, glowing, full of energy
+
+Design doc: `plans/design.md`
+
+- [ ] Load Nunito font (Google Fonts) via layout
+- [ ] Global color system — warm near-black background, amber `#e8831a` accent
+- [ ] Button redesign — chunky 52px+ tap targets, ember glow effect, spring press animation
+- [ ] Input redesign — warm borders, amber focus glow
+- [ ] Home page — animated title, bouncy CTA buttons
+- [ ] Lobby/Host page — large glowing room code, bounce-in player list
+- [ ] Play page — chunky vote option buttons, live result animations
+- [ ] Host game page — question display polish, force settle button glow
+- [ ] Summary page — celebratory bounce-in results
+- [ ] Page transitions — slide up + fade between routes
+- [ ] Loading states — pulsing ember glow instead of spinners
+- [ ] Error states — warm shake animation
+
+---
+
 ## Backlog (post-bonfire, if it gets traction)
 - Player avatars / emoji selection
 - Reaction system during vote reveal
