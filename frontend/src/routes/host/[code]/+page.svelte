@@ -112,6 +112,7 @@
           votes: get(liveVotes),
         }]);
       }
+      currentQuestion.set(null);
     });
 
     socket.on("room:ended", () => {

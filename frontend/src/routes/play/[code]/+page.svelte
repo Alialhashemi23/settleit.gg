@@ -103,6 +103,7 @@
           votes: get(liveVotes),
         }]);
       }
+      currentQuestion.set(null);
     });
 
     socket.on("host:disconnected", ({ deadline }: { deadline: number }) => {
