@@ -103,6 +103,20 @@ Design doc: `plans/design.md`
 
 ---
 
+## Phase 7 — Open Responses (write-in votes) 🗳️
+Goal: give players free will — add any response beyond the predetermined options
+
+**Design:** On any question (preset pack or custom), players can tap "Add option" to write in a new response. Once added, that option becomes available to all players in the room to vote on — same as any other option. Promotes live discussion and organic debate rather than forced binary choices.
+
+- [ ] Backend: `response:add-option` event — player submits a new option string, server validates (length, dedup) and broadcasts `question:option-added` to room
+- [ ] Backend: update consensus/countdown logic to account for dynamic option count
+- [ ] Frontend: "Add your own..." button on the question view (play + host pages), opens a small text input
+- [ ] Frontend: newly added options slide into the live vote display with a bounce-in animation
+- [ ] Frontend: write-in options visually distinguished (e.g. subtle "✏️ write-in" label)
+- [ ] Frontend: QuestionPicker unaffected — write-ins are a gameplay feature, not a question creation feature
+
+---
+
 ## Backlog (post-bonfire, if it gets traction)
 - Player avatars / emoji selection
 - Reaction system during vote reveal
