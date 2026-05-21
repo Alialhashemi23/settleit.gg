@@ -103,7 +103,17 @@ Design doc: `plans/design.md`
 
 ---
 
-## Phase 7 — Open Responses (write-in votes) 🗳️
+## Phase 7 — QoL + Bug Fixes 🛠️
+Goal: polish the real-world play experience based on bonfire test findings
+
+- [ ] **BUG-003** Mobile reconnect — persist `roomCode` + `playerId` in `localStorage`, detect socket reconnect, emit `room:sync` to restore player into active game state (question, votes, player list)
+- [ ] **BUG-002** Turn reveal highlight — highlight the first player in the order (index 0) with amber glow, separate from the "YOU" badge which stays on the local player
+- [ ] **QoL** Auto-insert dash in room code input — format entry as `XXXX-XXXX` automatically so players don't have to find the dash character on mobile keyboard
+- [ ] **QoL** Post-question result screen — after a question settles, show a brief result screen (3–5s or tap to continue) before the next player's turn begins, so players can absorb the outcome
+
+---
+
+## Phase 8 — Open Responses (write-in votes) 🗳️
 Goal: give players free will — add any response beyond the predetermined options
 
 **Design:** On any question (preset pack or custom), players can tap "Add option" to write in a new response. Once added, that option becomes available to all players in the room to vote on — same as any other option. Promotes live discussion and organic debate rather than forced binary choices.
