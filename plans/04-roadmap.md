@@ -113,17 +113,17 @@ Goal: polish the real-world play experience based on bonfire test findings
 
 ---
 
-## Phase 8 — Open Responses (write-in votes) 🗳️
+## Phase 8 — Open Responses (write-in votes) 🗳️ ✅
 Goal: give players free will — add any response beyond the predetermined options
 
 **Design:** On any question (preset pack or custom), players can tap "Add option" to write in a new response. Once added, that option becomes available to all players in the room to vote on — same as any other option. Promotes live discussion and organic debate rather than forced binary choices.
 
-- [ ] Backend: `response:add-option` event — player submits a new option string, server validates (length, dedup) and broadcasts `question:option-added` to room
-- [ ] Backend: update consensus/countdown logic to account for dynamic option count
-- [ ] Frontend: "Add your own..." button on the question view (play + host pages), opens a small text input
-- [ ] Frontend: newly added options slide into the live vote display with a bounce-in animation
-- [ ] Frontend: write-in options visually distinguished (e.g. subtle "✏️ write-in" label)
-- [ ] Frontend: QuestionPicker unaffected — write-ins are a gameplay feature, not a question creation feature
+- [x] Backend: `response:add-option` event — validates (non-empty, max 50 chars, max 8 total options, case-insensitive dedup), updates question options in DB, broadcasts `question:option-added`, auto-votes for the adder, re-runs consensus check
+- [x] Backend: consensus/countdown logic unchanged — works correctly with dynamic option counts since it operates on votes not option list length
+- [x] Frontend: "✏️ Add your own..." button on the question view (play + host pages), opens an inline text input with Add/Cancel; auto-dismissed after submit
+- [x] Frontend: newly added options slide into the live vote display via existing `votesByOption` derived (options list is reactive); bounce-in animation inherited from option card enter
+- [x] Frontend: write-in options visually distinguished with dashed border and "✏️ write-in" chip; tracked per-question in a `writeInOptions` Set reset on each new question
+- [x] Frontend: QuestionPicker unaffected — write-ins are a gameplay feature, not a question creation feature
 
 ---
 

@@ -40,6 +40,20 @@
     if (pending && pending === get(myPlayerId)) showPicker = true;
   }
 
+  // Write-in state
+  let writeInOptions = $state<Set<string>>(new Set());
+  let showWriteIn = $state(false);
+  let writeInText = $state('');
+
+  function submitWriteIn(e: Event) {
+    e.preventDefault();
+    const trimmed = writeInText.trim();
+    if (!trimmed || !$currentQuestion) return;
+    socket.emit("response:add-option", { questionId: $currentQuestion.id, option: trimmed });
+    writeInText = '';
+    showWriteIn = false;
+  }
+
   let votesByOption = $derived(
     ($currentQuestion?.options ?? []).map(opt => ({
       option: opt,
@@ -101,7 +115,18 @@
       questionEnded.set(false);
       countdown.set(null);
       showPicker = false;
+      writeInOptions = new Set();
+      showWriteIn = false;
+      writeInText = '';
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    });
+
+    socket.on("question:option-added", ({ questionId, option }: any) => {
+      const q = get(currentQuestion);
+      if (q && q.id === questionId) {
+        currentQuestion.update(cq => cq ? { ...cq, options: [...cq.options, option] } : cq);
+        writeInOptions = new Set([...writeInOptions, option]);
+      }
     });
 
     socket.on("response:update", ({ votes, totalPlayers: tp }: any) => {
@@ -155,7 +180,7 @@
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
     ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
-     "question:new","response:update","question:countdown","question:countdown:cancelled",
+     "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","room:ended"].forEach(e => socket.off(e));
   });
 
@@ -320,6 +345,19 @@
               {/if}
             {/if}
 
+            <!-- Write-in -->
+            {#if showWriteIn}
+              <form class="write-in-form" onsubmit={submitWriteIn}>
+                <input type="text" bind:value={writeInText} placeholder="Your option..." maxlength="50" autofocus />
+                <div class="write-in-actions">
+                  <button class="btn-write-submit" type="submit" disabled={!writeInText.trim()}>Add</button>
+                  <button class="btn-ghost" type="button" onclick={() => { showWriteIn = false; writeInText = ''; }}>Cancel</button>
+                </div>
+              </form>
+            {:else}
+              <button class="btn-write-in" onclick={() => showWriteIn = true}>✏️ Add your own...</button>
+            {/if}
+
             {#if isMyTurn}
               <button class="btn-force-settle" onclick={forceSettle}>Force Settle</button>
             {/if}
@@ -329,9 +367,13 @@
             <div class="options-live">
               {#each votesByOption as { option, voters, count }}
                 {@const pct = $players.length > 0 ? Math.round((count / $players.length) * 100) : 0}
-                <div class="option-row {$myVote === option ? 'mine' : ''}">
+                {@const isWriteIn = writeInOptions.has(option)}
+                <div class="option-row {$myVote === option ? 'mine' : ''} {isWriteIn ? 'write-in' : ''}">
                   <div class="option-row-top">
-                    <span class="option-name">{option}</span>
+                    <div class="option-name-wrap">
+                      <span class="option-name">{option}</span>
+                      {#if isWriteIn}<span class="write-in-chip">✏️ write-in</span>{/if}
+                    </div>
                     <span class="option-count">{count}</span>
                   </div>
                   <div class="bar-track">
@@ -636,9 +678,74 @@
     box-shadow: 0 0 12px var(--accent-alpha);
   }
 
-  .option-row-top { display: flex; justify-content: space-between; align-items: center; }
+  .option-row-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  .option-name-wrap { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
   .option-name { font-weight: 800; font-size: 0.95rem; }
-  .option-count { font-weight: 900; color: var(--accent); font-size: 0.875rem; }
+  .option-count { font-weight: 900; color: var(--accent); font-size: 0.875rem; flex-shrink: 0; }
+
+  .write-in-chip {
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: var(--text-dim);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.3rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .option-row.write-in { border-style: dashed; }
+
+  .btn-write-in {
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.6rem;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    align-self: flex-start;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .btn-write-in:hover { border-color: var(--accent); color: var(--accent); }
+
+  .write-in-form { display: flex; flex-direction: column; gap: 0.4rem; animation: slideUp 0.2s ease-out; }
+
+  .write-in-form input {
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.6rem;
+    border: 2px solid var(--accent);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-family: inherit;
+    font-weight: 600;
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-alpha);
+  }
+
+  .write-in-actions { display: flex; gap: 0.4rem; align-items: center; }
+
+  .btn-write-submit {
+    padding: 0.45rem 1rem;
+    border-radius: 0.6rem;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .btn-write-submit:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-write-submit:active:not(:disabled) { transform: scale(0.96); }
+  .btn-write-submit:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .bar-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
   .bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.35s ease; box-shadow: 0 0 6px var(--accent-alpha); }

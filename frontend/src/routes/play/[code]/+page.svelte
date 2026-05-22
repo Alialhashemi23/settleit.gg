@@ -27,6 +27,22 @@
   let isMyTurn = $derived($activePlayerId !== null && $activePlayerId === $myPlayerId);
   let activeTurnNickname = $derived($turnOrder.find(p => p.id === $activePlayerId)?.nickname ?? "");
 
+  // Write-in state
+  let writeInOptions = $state<Set<string>>(new Set());
+  let showWriteIn = $state(false);
+  let writeInText = $state('');
+  let writeInError = $state('');
+
+  function submitWriteIn(e: Event) {
+    e.preventDefault();
+    const trimmed = writeInText.trim();
+    if (!trimmed || !$currentQuestion) return;
+    writeInError = '';
+    socket.emit("response:add-option", { questionId: $currentQuestion.id, option: trimmed });
+    writeInText = '';
+    showWriteIn = false;
+  }
+
   // Result screen state
   let showResult = $state(false);
   let resultSettledOption = $state<string | null>(null);
@@ -110,7 +126,19 @@
       questionEnded.set(false);
       countdown.set(null);
       showPicker = false;
+      writeInOptions = new Set();
+      showWriteIn = false;
+      writeInText = '';
+      writeInError = '';
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    });
+
+    socket.on("question:option-added", ({ questionId, option }: any) => {
+      const q = get(currentQuestion);
+      if (q && q.id === questionId) {
+        currentQuestion.update(cq => cq ? { ...cq, options: [...cq.options, option] } : cq);
+        writeInOptions = new Set([...writeInOptions, option]);
+      }
     });
 
     socket.on("response:update", ({ votes, totalPlayers: tp }: any) => {
@@ -191,7 +219,7 @@
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
     ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
-     "question:new","response:update","question:countdown","question:countdown:cancelled",
+     "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","host:disconnected","room:ended","room:rejoined"].forEach(e => socket.off(e));
   });
 
@@ -340,14 +368,18 @@
         <div class="options">
           {#each votesByOption as { option, voters, count }}
             {@const isChosen = $myVote === option}
+            {@const isWriteIn = writeInOptions.has(option)}
             {@const pct = $totalPlayers > 0 ? Math.round((count / $totalPlayers) * 100) : 0}
             <button
-              class="option-card {isChosen ? 'chosen' : ''}"
+              class="option-card {isChosen ? 'chosen' : ''} {isWriteIn ? 'write-in' : ''}"
               onclick={() => castVote(option)}
             >
               <div class="option-top">
                 <span class="option-label">{option}</span>
-                <span class="option-count">{count}</span>
+                <div class="option-top-right">
+                  {#if isWriteIn}<span class="write-in-chip">✏️ write-in</span>{/if}
+                  <span class="option-count">{count}</span>
+                </div>
               </div>
               <div class="option-bar-track">
                 <div class="option-bar-fill" style="width:{pct}%"></div>
@@ -363,7 +395,27 @@
           {/each}
         </div>
 
-        {#if $myVote}
+        <!-- Write-in -->
+        {#if showWriteIn}
+          <form class="write-in-form" onsubmit={submitWriteIn}>
+            <input
+              type="text"
+              bind:value={writeInText}
+              placeholder="Your option..."
+              maxlength="50"
+              autofocus
+            />
+            <div class="write-in-actions">
+              <button class="btn-write-submit" type="submit" disabled={!writeInText.trim()}>Add</button>
+              <button class="btn-ghost" type="button" onclick={() => { showWriteIn = false; writeInText = ''; writeInError = ''; }}>Cancel</button>
+            </div>
+            {#if writeInError}<p class="write-in-error">{writeInError}</p>{/if}
+          </form>
+        {:else}
+          <button class="btn-write-in" onclick={() => showWriteIn = true}>✏️ Add your own...</button>
+        {/if}
+
+        {#if $myVote && !showWriteIn}
           <p class="change-hint">Tap any option to change your vote</p>
         {/if}
       </section>
@@ -519,10 +571,85 @@
     box-shadow: 0 0 16px var(--accent-alpha), inset 0 1px 0 rgba(232,131,26,0.08);
   }
 
-  .option-top { display: flex; justify-content: space-between; align-items: center; }
+  .option-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  .option-top-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 
   .option-label { font-size: 1.05rem; font-weight: 800; color: var(--text); }
   .option-count { font-size: 0.9rem; font-weight: 900; color: var(--accent); }
+
+  .write-in-chip {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: var(--text-dim);
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 0.1rem 0.35rem;
+    white-space: nowrap;
+  }
+
+  .option-card.write-in { border-style: dashed; }
+
+  .btn-write-in {
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: center;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    margin-top: 0.25rem;
+  }
+
+  .btn-write-in:hover { border-color: var(--accent); color: var(--accent); background: rgba(232,131,26,0.04); }
+
+  .write-in-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    animation: slideUp 0.2s ease-out;
+  }
+
+  .write-in-form input {
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    border: 2px solid var(--accent);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 1rem;
+    font-family: inherit;
+    font-weight: 600;
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-alpha);
+  }
+
+  .write-in-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+  .btn-write-submit {
+    padding: 0.6rem 1.25rem;
+    border-radius: 0.75rem;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 0 12px var(--accent-alpha);
+    transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s;
+  }
+
+  .btn-write-submit:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-write-submit:active:not(:disabled) { transform: scale(0.96); }
+  .btn-write-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .write-in-error { color: var(--error); font-size: 0.8rem; font-weight: 700; margin: 0; }
 
   .option-bar-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
   .option-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s ease; box-shadow: 0 0 6px var(--accent-alpha); }
