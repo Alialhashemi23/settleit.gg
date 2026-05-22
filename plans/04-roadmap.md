@@ -127,16 +127,16 @@ Goal: give players free will — add any response beyond the predetermined optio
 
 ---
 
-## Phase 9 — Player Question History 📜
+## Phase 9 — Player Question History 📜 ✅
 Goal: every player can see the full question and vote history during a session, not just the host
 
-**Context:** The host already has a collapsible "Session History" panel showing past questions and their settled options. Players currently have no way to look back — they only see the current question. The `questionHistory` store is already populated client-side on the play page as questions settle, so no new event is needed for players who are present throughout. The main work is building the UI and ensuring rejoining players also receive history.
+**Context:** The host already had a collapsible "Session History" panel. Players had no way to look back. The `questionHistory` store was already populated client-side on the play page as questions settle — the main work was building the UI, extracting a shared component, and restoring history for rejoining players.
 
-- [ ] Frontend (`play/[code]/+page.svelte`): add a collapsible "History" toggle at the bottom of the play page, matching the host's existing panel style — shows question prompt, settled option, and full vote breakdown per question
-- [ ] Frontend: history entries are already accumulated in the `questionHistory` store on `question:ended` — no new socket events needed for players who stay connected throughout
-- [ ] Backend (`handlers/room.ts`): update `room:rejoined` response to include past settled questions — query questions + responses from DB for the room, shaped as `{ prompt, settledOption, votes: [{ nickname, value }] }[]`
-- [ ] Frontend: on `room:rejoined`, populate `questionHistory` store from the returned history so reconnecting players see the full session context
-- [ ] Frontend: history panel on play page should be visually identical to the host's (collapsible toggle, question entries with vote bars, settled option highlight) — consider extracting into a shared `HistoryPanel.svelte` component to avoid duplication with the host page
+- [x] Frontend: extracted `HistoryPanel.svelte` shared component — collapsible toggle, question prompt, settled option badge, full vote breakdown with progress bars and voter names per option; used by both host and play pages
+- [x] Frontend (`host/[code]/+page.svelte`): replaced inline history section with `<HistoryPanel />`; removed `showHistory` state and old history CSS
+- [x] Frontend (`play/[code]/+page.svelte`): added `<HistoryPanel />` below the lobby/question section; players now see the same history panel as the host
+- [x] Backend (`handlers/room.ts`): `room:rejoined` now queries all settled questions for the room, computes settled option from stored responses, and returns `history[]` alongside the active question state
+- [x] Frontend: `room:rejoined` handler populates `questionHistory` store from server-returned history so reconnecting players see all past questions
 
 ---
 

@@ -170,19 +170,45 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     let currentQuestion = null;
     let currentVotes: { value: string; playerId: string; nickname: string }[] = [];
 
-    if (room.status === "question") {
-      const q = db.query("SELECT * FROM questions WHERE room_id = ? ORDER BY created_at DESC LIMIT 1").get(code) as any;
-      if (q) {
-        currentQuestion = { id: q.id, type: q.type, prompt: q.prompt, options: JSON.parse(q.options ?? "[]") };
-        currentVotes = db.query(`
+    const allQuestions = db.query(
+      "SELECT * FROM questions WHERE room_id = ? ORDER BY created_at ASC"
+    ).all(code) as any[];
+
+    const activeQuestionId = room.status === "question"
+      ? allQuestions[allQuestions.length - 1]?.id
+      : null;
+
+    if (activeQuestionId) {
+      const q = allQuestions[allQuestions.length - 1];
+      currentQuestion = { id: q.id, type: q.type, prompt: q.prompt, options: JSON.parse(q.options ?? "[]") };
+      currentVotes = db.query(`
+        SELECT r.value, p.id as playerId, p.nickname
+        FROM responses r
+        JOIN players p ON r.player_id = p.id
+        WHERE r.question_id = ?
+        ORDER BY r.submitted_at ASC
+      `).all(q.id) as { value: string; playerId: string; nickname: string }[];
+    }
+
+    const history = allQuestions
+      .filter(q => q.id !== activeQuestionId)
+      .map(q => {
+        const options: string[] = JSON.parse(q.options ?? "[]");
+        const votes = db.query(`
           SELECT r.value, p.id as playerId, p.nickname
           FROM responses r
           JOIN players p ON r.player_id = p.id
           WHERE r.question_id = ?
           ORDER BY r.submitted_at ASC
         `).all(q.id) as { value: string; playerId: string; nickname: string }[];
-      }
-    }
+        const counts: Record<string, number> = {};
+        for (const opt of options) counts[opt] = 0;
+        for (const v of votes) counts[v.value] = (counts[v.value] ?? 0) + 1;
+        const settledOption = votes.length > 0
+          ? (Object.entries(counts).sort(([, a], [, b]) => b - a)[0]?.[0] ?? null)
+          : null;
+        return { question: { id: q.id, type: q.type, prompt: q.prompt, options }, settledOption, votes };
+      });
 
     socket.emit("room:rejoined", {
       roomCode: code,
@@ -192,6 +218,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
       activePlayerId,
       currentQuestion,
       currentVotes,
+      history,
     });
   });
 

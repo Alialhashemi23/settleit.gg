@@ -11,6 +11,7 @@
     myPlayerId, turnOrder, activePlayerId,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
+  import HistoryPanel from "$lib/HistoryPanel.svelte";
 
   const code = $page.params.code;
   let socket = connect();
@@ -190,7 +191,7 @@
       }, 1000);
     });
 
-    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes }: any) => {
+    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes, history: hist }: any) => {
       roomCode.set(rc);
       myPlayerId.set(pid);
       players.set(pl);
@@ -201,6 +202,7 @@
         liveVotes.set(votes);
         myVote.set(votes.find((v: any) => v.playerId === pid)?.value ?? null);
       }
+      if (hist?.length) questionHistory.set(hist);
       connectionLost = false;
       notInRoom = false;
     });
@@ -420,6 +422,8 @@
         {/if}
       </section>
     {/if}
+
+    <HistoryPanel />
   {/if}
 </main>
 

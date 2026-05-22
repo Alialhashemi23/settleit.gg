@@ -10,12 +10,12 @@
     questionHistory, countdown, myPlayerId, turnOrder, activePlayerId,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
+  import HistoryPanel from "$lib/HistoryPanel.svelte";
 
   const code = $page.params.code;
   let socket = connect();
   let connectionLost = $state(false);
   let showPicker = $state(false);
-  let showHistory = $state(false);
   let showReveal = $state(false);
   let revealTimeout: ReturnType<typeof setTimeout> | null = null;
   let countdownSeconds = $state(0);
@@ -394,26 +394,7 @@
       </section>
     {/if}
 
-    <!-- Session history -->
-    {#if $questionHistory.length > 0}
-      <section class="history">
-        <button class="history-toggle" onclick={() => showHistory = !showHistory}>
-          Session History ({$questionHistory.length}) {showHistory ? "▲" : "▼"}
-        </button>
-        {#if showHistory}
-          <div class="history-list">
-            {#each $questionHistory as entry, i}
-              <div class="history-entry">
-                <div class="history-q">Q{i + 1}: {entry.question.prompt}</div>
-                {#if entry.settledOption}
-                  <div class="history-settled">Settled: {entry.settledOption}</div>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-    {/if}
+    <HistoryPanel />
   </div>
 </main>
 
@@ -762,14 +743,6 @@
   }
   .voter-chip.me { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px var(--accent-alpha); }
 
-  /* History */
-  .history { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem; }
-  .history-toggle { background: none; border: none; color: var(--text-muted); font-size: 0.875rem; font-weight: 800; cursor: pointer; padding: 0; font-family: inherit; transition: color 0.15s; }
-  .history-toggle:hover { color: var(--text); }
-  .history-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
-  .history-entry { background: var(--surface); border-radius: 0.75rem; padding: 0.75rem 1rem; border: 1px solid var(--border); }
-  .history-q { font-size: 0.875rem; font-weight: 700; color: var(--text-muted); }
-  .history-settled { font-size: 0.8rem; color: var(--success); margin-top: 0.25rem; font-weight: 700; }
 
   /* Buttons */
   .btn-primary {
