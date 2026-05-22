@@ -83,23 +83,23 @@ Goal: real-world validation before announcing
 
 ---
 
-## Phase 6 — UI Beautification 🎨🔥
+## Phase 6 — UI Beautification 🎨🔥 ✅
 Goal: make the app feel like a late-night bonfire experience — warm, glowing, full of energy
 
 Design doc: `plans/design.md`
 
-- [ ] Load Nunito font (Google Fonts) via layout
-- [ ] Global color system — warm near-black background, amber `#e8831a` accent
-- [ ] Button redesign — chunky 52px+ tap targets, ember glow effect, spring press animation
-- [ ] Input redesign — warm borders, amber focus glow
-- [ ] Home page — animated title, bouncy CTA buttons
-- [ ] Lobby/Host page — large glowing room code, bounce-in player list
-- [ ] Play page — chunky vote option buttons, live result animations
-- [ ] Host game page — question display polish, force settle button glow
-- [ ] Summary page — celebratory bounce-in results
-- [ ] Page transitions — slide up + fade between routes
-- [ ] Loading states — pulsing ember glow instead of spinners
-- [ ] Error states — warm shake animation
+- [x] Load Nunito font (Google Fonts) via layout — preconnect + stylesheet link in `+layout.svelte`, body uses `font-family: 'Nunito'`
+- [x] Global color system — CSS vars in `:global(:root)`: `--bg: #0d0905`, `--accent: #e8831a`, full warm palette across all pages
+- [x] Button redesign — `min-height: 52px`, ember `box-shadow: 0 0 16–18px var(--accent-alpha)`, spring press `cubic-bezier(0.34, 1.56, 0.64, 1)` on all pages
+- [x] Input redesign — warm `var(--border)` borders, amber focus `box-shadow: 0 0 0 3px var(--accent-alpha)` across home, QuestionPicker, write-in forms
+- [x] Home page — animated flame SVG (flicker/flickerInner/coreFlicker), `titleGlow` on h1, `slideUp` on hero, bouncy CTA buttons
+- [x] Lobby/Host page — room code card at `3.5rem` with `glowPulse` animation, player chips with staggered `bounceIn`
+- [x] Play page — option cards `min-height: 72px`, animated `option-bar-fill` progress bars, voter name chips
+- [x] Host game page — force settle button with amber glow on hover, two-column question layout with live vote display
+- [x] Summary page — entries bounce in with `animation-delay: {i * 80}ms` stagger, glowing h1
+- [x] Page transitions — every page root has `slideUp` entrance animation; section changes animate in
+- [x] Loading states — waiting states use `.pulse-dot` with `emberPulse` animation (no spinners)
+- [x] Error states — form validation errors use `@keyframes shake`; persistent banners use warm red styling without shake (appropriate for non-transient state)
 
 ---
 
