@@ -153,7 +153,7 @@ Goal: make it effortless to invite players — one tap to copy a link, one tap t
 
 ---
 
-## Phase 11 — Question Roll System + Tagged Library 🎲
+## Phase 11 — Question Roll System + Tagged Library 🎲 ✅
 Goal: replace the small 3-pack browser with a randomized "roll" UX backed by hundreds of multi-tagged questions, with per-room exclusion so the same question never repeats in a single game
 
 **Decisions locked in:**
@@ -183,33 +183,33 @@ Goal: replace the small 3-pack browser with a randomized "roll" UX backed by hun
 **Implementation:**
 
 *Backend:*
-- [ ] Migration: `ALTER TABLE questions ADD COLUMN preset_id TEXT`
-- [ ] `question:ask` event accepts optional `presetId` field; stored on the question row
-- [ ] `question:new` broadcast payload includes `presetId` (null for custom) so all clients can track what's been asked
-- [ ] `room:rejoined` response includes `askedPresetIds: string[]` so reconnecting players have correct exclusion state when their turn comes
+- [x] Schema: added `preset_id TEXT` column to `questions` table in `db.ts`
+- [x] `question:ask` event accepts optional `presetId` field, stored on the question row
+- [x] `question:new` broadcast payload includes `presetId` (null for custom) so all clients track what's been asked
+- [x] `room:rejoined` response includes `askedPresetIds: string[]` so reconnecting players have correct exclusion state when their turn comes
 
 *Frontend — data:*
-- [ ] Generate ~500 questions distributed across the tag taxonomy, save as `presets.ts`. AI-generated initial batch, user curates for tone/quality
-- [ ] Delete `packs.ts` once `presets.ts` is in place and QuestionPicker is migrated
-- [ ] New `askedPresetIds` store in `stores.ts`, `Writable<Set<string>>`, reset on room exit
+- [x] Generated 210 questions across the full tag taxonomy as `presets.ts` (AI-generated initial batch, ready for user curation/additions over time)
+- [x] Deleted `packs.ts`
+- [x] New `askedPresetIds` store in `stores.ts` — `Writable<Set<string>>`, reset on home page mount
 
 *Frontend — Roll UI (in `QuestionPicker.svelte`):*
-- [ ] Replace "Custom / From Pack" tab pair with "Roll / Custom" (Roll is default)
-- [ ] Tag filter section: chips for each tag, all selected by default. Toggle to include/exclude. Show selected-count summary
-- [ ] State: `currentRoll: PresetQuestion | null`. Initial value picked when Roll tab opens
-- [ ] Big "🎲 Roll" button when no current roll, or "🎲 Re-roll" when one is shown. Selects random preset where: tags intersect with selected filter chips AND id not in `$askedPresetIds` AND id !== current roll's id (to avoid showing the same one on re-roll)
-- [ ] Rolled question display: prompt + options as preview, then "Ask It" (emits `question:ask` with `presetId`) and "Re-roll" buttons
-- [ ] Empty state: "No questions match these filters" with prompt to broaden tags (when pool is exhausted, suggest clearing filters or switching to Custom)
+- [x] Replaced "Custom / From Pack" tabs with "🎲 Roll / Custom" (Roll is default)
+- [x] Collapsible tag filter section with topic chips + vibe chips, All/None shortcuts; shows selected-count + pool-size summary in the disclosure label
+- [x] Initial roll happens automatically when the picker opens (via `$effect`)
+- [x] "🎲 Roll a Question" big button when no current roll; "Ask It" + "🎲 Re-roll" actions when one is shown. Re-roll excludes the current question's id to guarantee a different result if pool size ≥ 2
+- [x] Rolled card shows prompt, options preview, and tag chips; bounce-in animation
+- [x] Edge cases handled inline: "No questions left for those tags" (broaden filters / use Custom) and "Select at least one tag" — re-roll is unlimited (cycles freely)
 
 *Frontend — exclusion tracking:*
-- [ ] On `question:new`, if payload includes `presetId`, add it to `askedPresetIds` store
-- [ ] On `room:rejoined`, populate `askedPresetIds` from server-returned list
-- [ ] Reset `askedPresetIds` on `room:ended` or when navigating home
+- [x] On `question:new`, if `presetId` present, added to `askedPresetIds` store (both host + play pages)
+- [x] On `room:rejoined` (play page), populates `askedPresetIds` from server-returned list
+- [x] Reset `askedPresetIds` on home page mount (covers room:ended → goto / and any fresh entry)
 
-**Open questions for next refinement (before implementation):**
-- Final tag taxonomy — should we add more topics (school, work, relationships)?
-- Edge case: pool exhausted mid-game (player has filtered to 1 tag, all rolled). Show empty state with "Broaden filters" suggestion, or auto-fallback to all tags?
-- Should re-roll have a cap (e.g. cycle through entire filtered pool then offer "give up and pick this one")? Or unlimited re-rolls?
+**Decided inline:**
+- Final taxonomy: 10 topics + 6 vibes (`gaming, anime, sports, movies, music, food, tech, internet, school, nostalgia`; `hot-take, wholesome, weird, dark-humor, friendship, hypothetical`)
+- Pool-exhausted edge case: show friendly empty state suggesting broader filters or Custom tab — no auto-fallback (preserves user intent)
+- Re-roll cap: unlimited — user can re-roll forever. If they cycle past every question in the filtered pool, the random selection will repeat eventually, which is fine
 
 ---
 

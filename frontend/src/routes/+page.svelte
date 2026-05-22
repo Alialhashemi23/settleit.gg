@@ -3,10 +3,12 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { connect, saveSession, clearSession } from "$lib/socket";
-  import { roomCode, players, myPlayerId } from "$lib/stores";
+  import { roomCode, players, myPlayerId, askedPresetIds, questionHistory } from "$lib/stores";
 
   onMount(() => {
     clearSession();
+    askedPresetIds.set(new Set());
+    questionHistory.set([]);
     const prefill = $page.url.searchParams.get("code");
     if (prefill) {
       code = prefill.toUpperCase();

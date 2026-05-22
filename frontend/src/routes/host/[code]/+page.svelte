@@ -7,7 +7,7 @@
   import {
     players, currentQuestion, liveVotes, totalPlayers,
     myVote, questionEnded, roomEnded, resetQuestionState,
-    questionHistory, countdown, myPlayerId, turnOrder, activePlayerId,
+    questionHistory, countdown, myPlayerId, turnOrder, activePlayerId, askedPresetIds,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
   import HistoryPanel from "$lib/HistoryPanel.svelte";
@@ -117,7 +117,7 @@
       }
     });
 
-    socket.on("question:new", ({ question }: any) => {
+    socket.on("question:new", ({ question, presetId }: any) => {
       currentQuestion.set(question);
       liveVotes.set([]);
       totalPlayers.set(get(players).length);
@@ -125,6 +125,7 @@
       questionEnded.set(false);
       countdown.set(null);
       showPicker = false;
+      if (presetId) askedPresetIds.update(s => { s.add(presetId); return new Set(s); });
       writeInOptions = new Set();
       showWriteIn = false;
       writeInText = '';

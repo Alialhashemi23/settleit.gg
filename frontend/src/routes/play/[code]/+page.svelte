@@ -7,7 +7,7 @@
   import {
     roomCode, players, currentQuestion, liveVotes, totalPlayers,
     myVote, questionEnded, hostDisconnected, roomEnded,
-    resetQuestionState, questionHistory, countdown,
+    resetQuestionState, questionHistory, countdown, askedPresetIds,
     myPlayerId, turnOrder, activePlayerId,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
@@ -129,7 +129,7 @@
       }
     });
 
-    socket.on("question:new", ({ question }: any) => {
+    socket.on("question:new", ({ question, presetId }: any) => {
       currentQuestion.set(question);
       liveVotes.set([]);
       totalPlayers.set(get(players).length);
@@ -137,6 +137,7 @@
       questionEnded.set(false);
       countdown.set(null);
       showPicker = false;
+      if (presetId) askedPresetIds.update(s => { s.add(presetId); return new Set(s); });
       writeInOptions = new Set();
       showWriteIn = false;
       writeInText = '';
@@ -201,7 +202,7 @@
       }, 1000);
     });
 
-    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes, history: hist }: any) => {
+    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes, history: hist, askedPresetIds: askedIds }: any) => {
       roomCode.set(rc);
       myPlayerId.set(pid);
       players.set(pl);
@@ -213,6 +214,7 @@
         myVote.set(votes.find((v: any) => v.playerId === pid)?.value ?? null);
       }
       if (hist?.length) questionHistory.set(hist);
+      if (askedIds?.length) askedPresetIds.set(new Set(askedIds));
       connectionLost = false;
       notInRoom = false;
     });

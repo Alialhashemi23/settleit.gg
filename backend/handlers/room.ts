@@ -210,6 +210,10 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
         return { question: { id: q.id, type: q.type, prompt: q.prompt, options }, settledOption, votes };
       });
 
+    const askedPresetIds = allQuestions
+      .map(q => q.preset_id as string | null)
+      .filter((id): id is string => !!id);
+
     socket.emit("room:rejoined", {
       roomCode: code,
       playerId,
@@ -219,6 +223,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
       currentQuestion,
       currentVotes,
       history,
+      askedPresetIds,
     });
   });
 

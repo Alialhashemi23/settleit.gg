@@ -33,6 +33,7 @@ db.run(`
     type TEXT NOT NULL,
     prompt TEXT NOT NULL,
     options TEXT,
+    preset_id TEXT,
     created_at INTEGER NOT NULL
   )
 `);

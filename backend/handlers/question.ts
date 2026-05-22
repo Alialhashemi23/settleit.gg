@@ -6,7 +6,7 @@ import { settleQuestion, cancelCountdown } from "../game";
 export function registerQuestionHandlers(io: Server, socket: Socket) {
   socket.on(
     "question:ask",
-    ({ prompt, options }: { prompt: string; options: string[] }) => {
+    ({ prompt, options, presetId }: { prompt: string; options: string[]; presetId?: string }) => {
       const code = socket.data.roomCode;
       if (!code) return;
       const room = getRoom(code);
@@ -28,12 +28,15 @@ export function registerQuestionHandlers(io: Server, socket: Socket) {
       const id = crypto.randomUUID();
       const now = Date.now();
       db.run(
-        "INSERT INTO questions (id, room_id, type, prompt, options, created_at) VALUES (?, ?, 'vote', ?, ?, ?)",
-        [id, code, prompt.trim(), JSON.stringify(opts), now]
+        "INSERT INTO questions (id, room_id, type, prompt, options, preset_id, created_at) VALUES (?, ?, 'vote', ?, ?, ?, ?)",
+        [id, code, prompt.trim(), JSON.stringify(opts), presetId ?? null, now]
       );
       db.run("UPDATE rooms SET status = 'question', last_active = ? WHERE id = ?", [now, code]);
 
-      io.to(code).emit("question:new", { question: { id, type: "vote", prompt: prompt.trim(), options: opts } });
+      io.to(code).emit("question:new", {
+        question: { id, type: "vote", prompt: prompt.trim(), options: opts },
+        presetId: presetId ?? null,
+      });
     }
   );
 
