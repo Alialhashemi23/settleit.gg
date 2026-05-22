@@ -30,7 +30,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     socket.data.isHost = true;
     socket.data.playerId = playerId;
     socket.emit("room:created", { roomCode: code });
-    socket.emit("room:joined", { roomCode: code, players: getRoomPlayers(code), playerId });
+    socket.emit("room:joined", { roomCode: code, players: getRoomPlayers(code), playerId, presetsEnabled: true });
   });
 
   socket.on("room:join", ({ roomCode, nickname }: { roomCode: string; nickname: string }) => {
@@ -54,7 +54,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     socket.data.playerId = playerId;
 
     const players = getRoomPlayers(code);
-    socket.emit("room:joined", { roomCode: code, players, playerId });
+    socket.emit("room:joined", { roomCode: code, players, playerId, presetsEnabled: room.presets_enabled !== 0 });
     socket.to(code).emit("room:updated", { players });
 
     const activeQ = db.query(
@@ -93,8 +93,20 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     socket.data.playerId = playerId;
 
     const players = getRoomPlayers(code);
-    socket.emit("room:joined", { roomCode: code, players, playerId });
+    const rejoinedRoom = getRoom(code)!;
+    socket.emit("room:joined", { roomCode: code, players, playerId, presetsEnabled: rejoinedRoom.presets_enabled !== 0 });
     io.to(code).emit("room:updated", { players });
+  });
+
+  socket.on("room:set-presets-enabled", ({ enabled }: { enabled: boolean }) => {
+    const code = socket.data.roomCode;
+    if (!code) return;
+    const room = getRoom(code);
+    if (!room || room.host_socket_id !== socket.id) return;
+    if (room.status !== "lobby") return;
+    db.run("UPDATE rooms SET presets_enabled = ? WHERE id = ?", [enabled ? 1 : 0, code]);
+    touchRoom(code);
+    io.to(code).emit("room:settings-updated", { presetsEnabled: enabled });
   });
 
   socket.on("game:start", () => {
@@ -224,6 +236,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
       currentVotes,
       history,
       askedPresetIds,
+      presetsEnabled: room.presets_enabled !== 0,
     });
   });
 

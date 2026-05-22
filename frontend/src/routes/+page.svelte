@@ -3,7 +3,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { connect, saveSession, clearSession } from "$lib/socket";
-  import { roomCode, players, myPlayerId, askedPresetIds, questionHistory } from "$lib/stores";
+  import { roomCode, players, myPlayerId, askedPresetIds, questionHistory, presetsEnabled } from "$lib/stores";
 
   onMount(() => {
     clearSession();
@@ -37,10 +37,11 @@
       roomCode.set(rc);
     });
 
-    socket.once("room:joined", ({ roomCode: rc, players: pl, playerId: pid }: { roomCode: string; players: any[]; playerId: string }) => {
+    socket.once("room:joined", ({ roomCode: rc, players: pl, playerId: pid, presetsEnabled: pe }: any) => {
       roomCode.set(rc);
       players.set(pl);
       myPlayerId.set(pid);
+      if (typeof pe === 'boolean') presetsEnabled.set(pe);
       saveSession(rc, pid, nickname.trim());
       loading = false;
       goto(`/host/${rc}`);
@@ -71,10 +72,11 @@
       loading = false;
     });
 
-    socket.once("room:joined", ({ roomCode: rc, players: pl, playerId: pid }: { roomCode: string; players: any[]; playerId: string }) => {
+    socket.once("room:joined", ({ roomCode: rc, players: pl, playerId: pid, presetsEnabled: pe }: any) => {
       roomCode.set(rc);
       players.set(pl);
       myPlayerId.set(pid);
+      if (typeof pe === 'boolean') presetsEnabled.set(pe);
       saveSession(rc, pid, nickname.trim());
       loading = false;
       goto(`/play/${rc}`);

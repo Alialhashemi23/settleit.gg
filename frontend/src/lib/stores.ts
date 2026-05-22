@@ -35,6 +35,7 @@ export const hostDisconnected = writable<{ deadline: number } | null>(null);
 export const roomEnded = writable(false);
 export const questionHistory = writable<HistoryEntry[]>([]);
 export const askedPresetIds = writable<Set<string>>(new Set());
+export const presetsEnabled = writable<boolean>(true);
 
 // Countdown
 export const countdown = writable<{ deadline: number; leadingOption: string } | null>(null);

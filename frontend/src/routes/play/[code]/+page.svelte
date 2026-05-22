@@ -8,7 +8,7 @@
     roomCode, players, currentQuestion, liveVotes, totalPlayers,
     myVote, questionEnded, hostDisconnected, roomEnded,
     resetQuestionState, questionHistory, countdown, askedPresetIds,
-    myPlayerId, turnOrder, activePlayerId,
+    myPlayerId, turnOrder, activePlayerId, presetsEnabled,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
   import HistoryPanel from "$lib/HistoryPanel.svelte";
@@ -107,6 +107,7 @@
     socket.on("disconnect", () => { connectionLost = true; });
     socket.on("connect", () => { connectionLost = false; rejoinSession(); });
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
+    socket.on("room:settings-updated", ({ presetsEnabled: pe }: any) => presetsEnabled.set(pe));
 
     socket.on("game:started", ({ turnOrder: order, activePlayerId: apId }: any) => {
       turnOrder.set(order);
@@ -139,7 +140,7 @@
       showPicker = false;
       if (presetId) askedPresetIds.update(s => { s.add(presetId); return new Set(s); });
       writeInOptions = new Set();
-      showWriteIn = false;
+      showWriteIn = (question.options ?? []).length === 0;
       writeInText = '';
       writeInError = '';
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
@@ -202,7 +203,7 @@
       }, 1000);
     });
 
-    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes, history: hist, askedPresetIds: askedIds }: any) => {
+    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes, history: hist, askedPresetIds: askedIds, presetsEnabled: presetsEnabledVal }: any) => {
       roomCode.set(rc);
       myPlayerId.set(pid);
       players.set(pl);
@@ -215,6 +216,7 @@
       }
       if (hist?.length) questionHistory.set(hist);
       if (askedIds?.length) askedPresetIds.set(new Set(askedIds));
+      if (typeof presetsEnabledVal === 'boolean') presetsEnabled.set(presetsEnabledVal);
       connectionLost = false;
       notInRoom = false;
     });
@@ -414,6 +416,9 @@
         </div>
 
         <!-- Write-in -->
+        {#if ($currentQuestion?.options ?? []).length === 0 && !showWriteIn}
+          <p class="no-options-nudge">No options yet — be the first to add one</p>
+        {/if}
         {#if showWriteIn}
           <form class="write-in-form" onsubmit={submitWriteIn}>
             <input
@@ -627,6 +632,15 @@
   }
 
   .option-card.write-in { border-style: dashed; }
+
+  .no-options-nudge {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin: 0.25rem 0;
+    font-style: italic;
+  }
 
   .btn-write-in {
     width: 100%;

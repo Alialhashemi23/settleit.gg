@@ -11,6 +11,7 @@ db.run(`
     turn_order TEXT,
     turn_index INTEGER,
     host_reconnect_deadline INTEGER,
+    presets_enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     last_active INTEGER NOT NULL
   )

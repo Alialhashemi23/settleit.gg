@@ -7,7 +7,7 @@
   import {
     players, currentQuestion, liveVotes, totalPlayers,
     myVote, questionEnded, roomEnded, resetQuestionState,
-    questionHistory, countdown, myPlayerId, turnOrder, activePlayerId, askedPresetIds,
+    questionHistory, countdown, myPlayerId, turnOrder, activePlayerId, askedPresetIds, presetsEnabled,
   } from "$lib/stores";
   import QuestionPicker from "$lib/QuestionPicker.svelte";
   import HistoryPanel from "$lib/HistoryPanel.svelte";
@@ -95,6 +95,7 @@
     socket.on("disconnect", () => { connectionLost = true; });
     socket.on("connect", () => { connectionLost = false; });
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
+    socket.on("room:settings-updated", ({ presetsEnabled: pe }: any) => presetsEnabled.set(pe));
 
     socket.on("game:started", ({ turnOrder: order, activePlayerId: apId }: any) => {
       turnOrder.set(order);
@@ -127,7 +128,7 @@
       showPicker = false;
       if (presetId) askedPresetIds.update(s => { s.add(presetId); return new Set(s); });
       writeInOptions = new Set();
-      showWriteIn = false;
+      showWriteIn = (question.options ?? []).length === 0;
       writeInText = '';
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
     });
@@ -191,7 +192,7 @@
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
     if (copyTimeout) clearTimeout(copyTimeout);
-    ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
+    ["connect_error","disconnect","connect","room:updated","room:settings-updated","game:started","turn:changed",
      "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","room:ended"].forEach(e => socket.off(e));
   });
@@ -322,6 +323,16 @@
         {/if}
 
         {#if $turnOrder.length === 0}
+          <label class="presets-toggle">
+            <input type="checkbox" checked={$presetsEnabled} onchange={e => {
+              const val = (e.target as HTMLInputElement).checked;
+              presetsEnabled.set(val);
+              socket.emit("room:set-presets-enabled", { enabled: val });
+            }} />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-label">Use preset questions</span>
+          </label>
+
           <button class="btn-primary" onclick={startGame} disabled={$players.length < 2}>
             {$players.length < 2 ? "Need 2+ players" : "Start Game"}
           </button>
@@ -374,7 +385,11 @@
             {/if}
 
             {#if isMyTurn}
-              <button class="btn-force-settle" onclick={forceSettle}>Force Settle</button>
+              {#if ($currentQuestion?.options ?? []).length === 0}
+                <p class="no-options-nudge">Add at least one option before settling</p>
+              {:else}
+                <button class="btn-force-settle" onclick={forceSettle}>Force Settle</button>
+              {/if}
             {/if}
           </div>
 
@@ -717,6 +732,14 @@
 
   .option-row.write-in { border-style: dashed; }
 
+  .no-options-nudge {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    font-style: italic;
+    margin: 0;
+  }
+
   .btn-write-in {
     padding: 0.5rem 0.75rem;
     border-radius: 0.6rem;
@@ -784,6 +807,44 @@
 
 
   /* Buttons */
+  /* Presets toggle */
+  .presets-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .presets-toggle input[type="checkbox"] { display: none; }
+
+  .toggle-track {
+    width: 40px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--border);
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+
+  .presets-toggle input:checked ~ .toggle-track { background: var(--accent); box-shadow: 0 0 8px var(--accent-alpha); }
+
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .presets-toggle input:checked ~ .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+  .toggle-label { font-size: 0.875rem; font-weight: 800; color: var(--text-muted); }
+
   .btn-primary {
     min-height: 52px;
     padding: 0.85rem 1.5rem;

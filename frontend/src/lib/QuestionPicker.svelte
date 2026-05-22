@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { Socket } from "socket.io-client";
   import { presets, TOPIC_TAGS, VIBE_TAGS, type PresetQuestion, type Tag } from "$lib/presets";
-  import { askedPresetIds } from "$lib/stores";
+  import { askedPresetIds, presetsEnabled } from "$lib/stores";
   import { get } from "svelte/store";
 
   let { socket, onPushed }: { socket: Socket; onPushed?: () => void } = $props();
 
-  let pickerTab: "roll" | "custom" = $state("roll");
+  let pickerTab: "roll" | "custom" = $state($presetsEnabled ? "roll" : "custom");
 
   // Roll state
   let selectedTags = $state<Set<Tag>>(new Set([...TOPIC_TAGS, ...VIBE_TAGS] as Tag[]));
@@ -77,12 +77,14 @@
 </script>
 
 <div class="picker">
+  {#if $presetsEnabled}
   <div class="tabs">
     <button class="tab {pickerTab === 'roll' ? 'active' : ''}" onclick={() => pickerTab = 'roll'}>🎲 Roll</button>
     <button class="tab {pickerTab === 'custom' ? 'active' : ''}" onclick={() => pickerTab = 'custom'}>Custom</button>
   </div>
+  {/if}
 
-  {#if pickerTab === 'roll'}
+  {#if pickerTab === 'roll' && $presetsEnabled}
     <div class="roll">
       <details class="tag-filters">
         <summary>Filters · {selectedTags.size} of {TOPIC_TAGS.length + VIBE_TAGS.length} tags · {poolSize} questions</summary>
@@ -144,12 +146,12 @@
         <input type="text" bind:value={customPrompt} placeholder="Who's the GOAT?" maxlength="200" />
       </label>
       <fieldset>
-        <legend>Options (2–4)</legend>
+        <legend>Options (optional, 0–4)</legend>
         {#each customOptions as _, i}
           <input type="text" bind:value={customOptions[i]} placeholder="Option {i + 1}" maxlength="60" />
         {/each}
       </fieldset>
-      <button class="btn-primary" type="submit" disabled={!customPrompt.trim() || customOptions.filter(o => o.trim()).length < 2}>
+      <button class="btn-primary" type="submit" disabled={!customPrompt.trim()}>
         Ask It
       </button>
     </form>

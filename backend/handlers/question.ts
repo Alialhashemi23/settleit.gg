@@ -19,8 +19,8 @@ export function registerQuestionHandlers(io: Server, socket: Socket) {
         return;
       }
 
-      const opts = options.filter(o => o.trim());
-      if (!prompt.trim() || opts.length < 2) {
+      const opts = (options ?? []).filter(o => o.trim());
+      if (!prompt.trim()) {
         socket.emit("error", { message: "invalid_question" });
         return;
       }
@@ -53,6 +53,13 @@ export function registerQuestionHandlers(io: Server, socket: Socket) {
 
     if (!isActivePlayer && !isHost) {
       socket.emit("error", { message: "not_authorized" });
+      return;
+    }
+
+    const activeQ = db.query("SELECT options FROM questions WHERE room_id = ? ORDER BY created_at DESC LIMIT 1").get(code) as { options: string } | null;
+    const activeOpts: string[] = activeQ ? JSON.parse(activeQ.options ?? "[]") : [];
+    if (activeOpts.length === 0) {
+      socket.emit("error", { message: "no_options_to_settle" });
       return;
     }
 

@@ -107,6 +107,7 @@ export interface Room {
   turn_order: string | null;
   turn_index: number | null;
   host_reconnect_deadline: number | null;
+  presets_enabled: number;
   created_at: number;
   last_active: number;
 }

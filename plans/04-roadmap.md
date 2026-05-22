@@ -213,7 +213,7 @@ Goal: replace the small 3-pack browser with a randomized "roll" UX backed by hun
 
 ---
 
-## Phase 12 — Optional Presets + Optional Options 🎚️
+## Phase 12 — Optional Presets + Optional Options 🎚️ ✅
 Goal: give the host control over whether the game uses the preset pool, and let askers create questions without pre-defined options (pure write-in mode)
 
 **Context:** Two friction points to remove. (1) Some game nights want a "pure custom" feel where everyone writes their own questions and answers — the preset Roll tab is in the way. (2) The Custom tab currently *requires* 2+ options, but Phase 8 write-ins mean players can fill in answers organically. Forcing the asker to seed options is unnecessary work.
@@ -229,14 +229,13 @@ Goal: give the host control over whether the game uses the preset pool, and let 
 - All players see the same setting (it's room state, not per-player)
 
 **Implementation:**
-- [ ] Backend: add `presets_enabled INTEGER DEFAULT 1` column to `rooms` table in `db.ts`
-- [ ] Backend: new `room:set-presets-enabled` event accepting `{ enabled: boolean }` — host-only, lobby-only (rejected once game starts); updates row, broadcasts `room:settings-updated`
-- [ ] Backend: include `presetsEnabled` in `room:joined`, `room:rejoined`, and the existing `room:updated` payloads
-- [ ] Frontend: add `presetsEnabled` writable to `stores.ts`, default `true`
-- [ ] Frontend (host lobby): toggle switch above the Start Game button — "Use preset questions" with a one-line description like "Pick from 210 prewritten questions, or off for pure write-ins"
-- [ ] Frontend: lobby toggle hidden/disabled after `game:started` fires
-- [ ] Frontend (`QuestionPicker.svelte`): if `!$presetsEnabled`, hide the tab bar entirely and show only the Custom form
-- [ ] Frontend: include `presetsEnabled` handling in `room:rejoined` listener (play page)
+- [x] Backend: added `presets_enabled INTEGER DEFAULT 1` column to `rooms` table in `db.ts`
+- [x] Backend: new `room:set-presets-enabled` event — host-only, lobby-only; updates row, broadcasts `room:settings-updated`
+- [x] Backend: `presetsEnabled` included in `room:joined` (create + join + host-rejoin) and `room:rejoined` payloads
+- [x] Frontend: `presetsEnabled` writable added to `stores.ts`, default `true`; reset on home mount
+- [x] Frontend (host lobby): amber toggle switch above Start Game button — "Use preset questions"; emits `room:set-presets-enabled` on change; hidden after game starts
+- [x] Frontend (`QuestionPicker.svelte`): if `!$presetsEnabled`, tab bar hidden and Roll section skipped; default tab flips to Custom
+- [x] Frontend: `presetsEnabled` set from `room:joined` (home page `once` listeners) and `room:rejoined` (play page); `room:settings-updated` listened on both host + play pages
 
 ### Part 2 — Optional Options on Custom Questions
 
@@ -247,11 +246,12 @@ Goal: give the host control over whether the game uses the preset pool, and let 
 - Players write in options (Phase 8 flow), auto-vote for their own, and consensus proceeds as normal
 
 **Implementation:**
-- [ ] Backend (`handlers/question.ts`): relax `question:ask` validation — accept `options: []` (currently rejects if `< 2`); keep prompt requirement
-- [ ] Frontend (`QuestionPicker.svelte`): change Custom tab disabled condition from `customOptions.filter(o => o.trim()).length < 2` to `!customPrompt.trim()`; update legend to "Options (optional, 0–4)"
-- [ ] Frontend (play + host pages): when `$currentQuestion.options.length === 0`, default `showWriteIn = true` and skip rendering the dashed "Add your own..." button; show a nudge subtitle above the form
-- [ ] Frontend (host): when no options yet, the host's vote-cast section should be hidden (nothing to vote on); show only the write-in form
-- [ ] Consider: should the active player (asker) be allowed to **Force Settle** a question with 0 options? Probably no — block with an inline message "Wait for at least one option to be added"
+- [x] Backend (`handlers/question.ts`): relaxed `question:ask` validation — accepts `options: []`; only rejects if prompt is empty
+- [x] Backend: `question:next` (force settle) now checks if active question has 0 options and returns `no_options_to_settle` error if so
+- [x] Frontend (`QuestionPicker.svelte`): Custom tab `disabled` condition changed to `!customPrompt.trim()`; legend updated to "Options (optional, 0–4)"
+- [x] Frontend (play + host): `question:new` defaults `showWriteIn = true` when `question.options.length === 0`
+- [x] Frontend (play): nudge text "No options yet — be the first to add one" shown when options empty and write-in form not visible
+- [x] Frontend (host): Force Settle replaced with nudge "Add at least one option before settling" when options is empty
 
 **Edge cases (decided inline now):**
 - Consensus with 0 options: simply doesn't trigger — no votes possible until someone writes in. Fine.
