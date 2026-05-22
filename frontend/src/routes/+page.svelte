@@ -1,7 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { connect } from "$lib/socket";
+  import { onMount } from "svelte";
+  import { connect, saveSession, clearSession } from "$lib/socket";
   import { roomCode, players, myPlayerId } from "$lib/stores";
+
+  onMount(() => clearSession());
 
   let mode: "none" | "join" | "create" = $state("none");
   let nickname = $state("");
@@ -28,6 +31,7 @@
       roomCode.set(rc);
       players.set(pl);
       myPlayerId.set(pid);
+      saveSession(rc, pid, nickname.trim());
       loading = false;
       goto(`/host/${rc}`);
     });
@@ -38,6 +42,11 @@
     });
 
     socket.emit("room:create", { nickname: nickname.trim() });
+  }
+
+  function formatCode(e: Event) {
+    const raw = (e.target as HTMLInputElement).value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    code = raw.length > 4 ? raw.slice(0, 4) + '-' + raw.slice(4, 8) : raw;
   }
 
   function handleJoin() {
@@ -56,6 +65,7 @@
       roomCode.set(rc);
       players.set(pl);
       myPlayerId.set(pid);
+      saveSession(rc, pid, nickname.trim());
       loading = false;
       goto(`/play/${rc}`);
     });
@@ -137,7 +147,8 @@
           Room code
           <input
             type="text"
-            bind:value={code}
+            value={code}
+            oninput={formatCode}
             placeholder="e.g. FIRE-4829"
             maxlength="9"
             autofocus

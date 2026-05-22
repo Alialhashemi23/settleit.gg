@@ -3,7 +3,7 @@
   import { goto } from "$app/navigation";
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
-  import { connect } from "$lib/socket";
+  import { connect, getSession, clearSession } from "$lib/socket";
   import {
     roomCode, players, currentQuestion, liveVotes, totalPlayers,
     myVote, questionEnded, hostDisconnected, roomEnded,
@@ -27,6 +27,22 @@
   let isMyTurn = $derived($activePlayerId !== null && $activePlayerId === $myPlayerId);
   let activeTurnNickname = $derived($turnOrder.find(p => p.id === $activePlayerId)?.nickname ?? "");
 
+  // Result screen state
+  let showResult = $state(false);
+  let resultSettledOption = $state<string | null>(null);
+  let resultQuestion = $state<{ id: string; type: string; prompt: string; options: string[] } | null>(null);
+  let resultVotes = $state<{ playerId: string; nickname: string; value: string }[]>([]);
+  let resultTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pendingPickerTurn = $state<string | null>(null);
+
+  function dismissResult() {
+    if (resultTimeout) { clearTimeout(resultTimeout); resultTimeout = null; }
+    showResult = false;
+    const pending = pendingPickerTurn;
+    pendingPickerTurn = null;
+    if (pending && pending === $myPlayerId) showPicker = true;
+  }
+
   function startCountdownTick(deadline: number) {
     if (countdownInterval) clearInterval(countdownInterval);
     countdownSeconds = Math.max(0, Math.round((deadline - Date.now()) / 1000));
@@ -39,12 +55,30 @@
     }, 200);
   }
 
+  // Always rejoin from session on reconnect — socket disconnect removes us from backend
+  function rejoinSession() {
+    const session = getSession();
+    if (session && session.roomCode === code) {
+      socket.emit("room:player-rejoin", session);
+    } else {
+      notInRoom = true;
+    }
+  }
+
   onMount(() => {
-    if (!get(roomCode)) { notInRoom = true; return; }
+    if (!get(roomCode)) {
+      const session = getSession();
+      if (session && session.roomCode === code) {
+        socket.emit("room:player-rejoin", session);
+      } else {
+        notInRoom = true;
+        return;
+      }
+    }
 
     socket.on("connect_error", () => { connectionLost = true; });
     socket.on("disconnect", () => { connectionLost = true; });
-    socket.on("connect", () => { connectionLost = false; });
+    socket.on("connect", () => { connectionLost = false; rejoinSession(); });
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
 
     socket.on("game:started", ({ turnOrder: order, activePlayerId: apId }: any) => {
@@ -59,7 +93,13 @@
 
     socket.on("turn:changed", ({ activePlayerId: apId }: any) => {
       activePlayerId.set(apId);
-      if (apId === get(myPlayerId)) showPicker = true;
+      if (apId === get(myPlayerId)) {
+        if (showResult) {
+          pendingPickerTurn = apId;
+        } else {
+          showPicker = true;
+        }
+      }
     });
 
     socket.on("question:new", ({ question }: any) => {
@@ -96,12 +136,19 @@
       countdown.set(null);
       if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
       const q = get(currentQuestion);
+      const votes = get(liveVotes);
       if (q) {
         questionHistory.update(h => [...h, {
           question: q,
           settledOption: settledOption ?? null,
-          votes: get(liveVotes),
+          votes,
         }]);
+        resultQuestion = q;
+        resultVotes = [...votes];
+        resultSettledOption = settledOption ?? null;
+        showResult = true;
+        if (resultTimeout) clearTimeout(resultTimeout);
+        resultTimeout = setTimeout(dismissResult, 3000);
       }
       currentQuestion.set(null);
     });
@@ -115,8 +162,24 @@
       }, 1000);
     });
 
+    socket.on("room:rejoined", ({ roomCode: rc, playerId: pid, players: pl, turnOrder: order, activePlayerId: apId, currentQuestion: q, currentVotes: votes }: any) => {
+      roomCode.set(rc);
+      myPlayerId.set(pid);
+      players.set(pl);
+      totalPlayers.set(pl.length);
+      if (order) { turnOrder.set(order); activePlayerId.set(apId); }
+      if (q) {
+        currentQuestion.set(q);
+        liveVotes.set(votes);
+        myVote.set(votes.find((v: any) => v.playerId === pid)?.value ?? null);
+      }
+      connectionLost = false;
+      notInRoom = false;
+    });
+
     socket.on("room:ended", () => {
       roomEnded.set(true);
+      clearSession();
       if (hostTimer) clearInterval(hostTimer);
       goto("/summary");
     });
@@ -126,9 +189,10 @@
     if (revealTimeout) clearTimeout(revealTimeout);
     if (hostTimer) clearInterval(hostTimer);
     if (countdownInterval) clearInterval(countdownInterval);
+    if (resultTimeout) clearTimeout(resultTimeout);
     ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
      "question:new","response:update","question:countdown","question:countdown:cancelled",
-     "question:ended","host:disconnected","room:ended"].forEach(e => socket.off(e));
+     "question:ended","host:disconnected","room:ended","room:rejoined"].forEach(e => socket.off(e));
   });
 
   function castVote(option: string) {
@@ -152,6 +216,28 @@
   );
 </script>
 
+<!-- Post-question result screen -->
+{#if showResult && resultQuestion}
+  <div class="overlay result-overlay" onclick={dismissResult} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && dismissResult()}>
+    <div class="result-card">
+      <div class="result-settled">Settled!</div>
+      <div class="result-option">{resultSettledOption}</div>
+      <div class="result-breakdown">
+        {#each resultQuestion.options as opt}
+          {@const voters = resultVotes.filter(v => v.value === opt)}
+          {#if voters.length > 0}
+            <div class="rb-row {opt === resultSettledOption ? 'winner' : ''}">
+              <span class="rb-opt">{opt}</span>
+              <span class="rb-names">{voters.map(v => v.nickname).join(', ')}</span>
+            </div>
+          {/if}
+        {/each}
+      </div>
+      <p class="result-hint">Tap anywhere to continue</p>
+    </div>
+  </div>
+{/if}
+
 <!-- Turn reveal overlay -->
 {#if showReveal}
   <div class="overlay">
@@ -160,10 +246,11 @@
       <div class="reveal-subtitle">Turn order</div>
       <ol class="reveal-list">
         {#each $turnOrder as player, i}
-          <li class="reveal-item {player.id === $myPlayerId ? 'me' : ''}">
+          <li class="reveal-item {player.id === $myPlayerId ? 'me' : ''} {i === 0 ? 'first' : ''}">
             <span class="reveal-num">{i + 1}</span>
             <span class="reveal-name">{player.nickname}</span>
             {#if player.id === $myPlayerId}<span class="reveal-you">YOU</span>{/if}
+            {#if i === 0 && player.id !== $myPlayerId}<span class="reveal-goes-first">FIRST</span>{/if}
           </li>
         {/each}
       </ol>
@@ -531,6 +618,50 @@
   .reveal-num { color: var(--text-dim); font-size: 0.8rem; width: 1.25rem; font-weight: 800; }
   .reveal-name { flex: 1; font-weight: 800; }
   .reveal-you { font-size: 0.7rem; font-weight: 900; color: var(--accent); text-transform: uppercase; }
+  .reveal-goes-first { font-size: 0.7rem; font-weight: 900; color: var(--accent); text-transform: uppercase; }
+
+  /* Result screen */
+  .result-overlay { z-index: 150; cursor: pointer; }
+
+  .result-card {
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    border-radius: 1.5rem;
+    padding: 2rem;
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+    box-shadow: 0 0 48px var(--accent-alpha);
+    animation: bounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    cursor: default;
+  }
+
+  .result-settled { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 800; margin-bottom: 0.25rem; }
+  .result-option { font-size: 2rem; font-weight: 900; color: var(--accent); margin-bottom: 1.25rem; line-height: 1.2; text-shadow: 0 0 24px var(--accent-alpha); }
+
+  .result-breakdown { display: flex; flex-direction: column; gap: 0.5rem; text-align: left; margin-bottom: 1.25rem; }
+
+  .rb-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.5rem;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+  }
+
+  .rb-row.winner { border-color: var(--accent); background: rgba(232,131,26,0.08); }
+
+  .rb-opt { font-size: 0.875rem; font-weight: 800; color: var(--text-muted); flex-shrink: 0; }
+  .rb-row.winner .rb-opt { color: var(--accent); }
+  .rb-names { font-size: 0.75rem; font-weight: 600; color: var(--text-dim); text-align: right; }
+
+  .result-hint { font-size: 0.75rem; font-weight: 600; color: var(--text-dim); margin: 0; }
+
+  /* BUG-002: first player highlight in turn reveal */
+  .reveal-item.first { border-color: var(--accent); box-shadow: 0 0 10px var(--accent-alpha); }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 

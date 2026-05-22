@@ -129,6 +129,72 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     });
   });
 
+  socket.on("room:player-rejoin", ({ roomCode, playerId, nickname }: { roomCode: string; playerId: string; nickname: string }) => {
+    const code = roomCode.toUpperCase();
+    const room = getRoom(code);
+
+    if (!room || room.status === "ended") {
+      socket.emit("error", { message: "room_not_found" });
+      return;
+    }
+
+    const existing = db.query("SELECT id FROM players WHERE id = ? AND room_id = ?").get(playerId, code) as { id: string } | null;
+    if (existing) {
+      db.run("UPDATE players SET socket_id = ? WHERE id = ?", [socket.id, playerId]);
+    } else {
+      db.run(
+        "INSERT INTO players (id, room_id, socket_id, nickname, joined_at) VALUES (?, ?, ?, ?, ?)",
+        [playerId, code, socket.id, nickname, Date.now()]
+      );
+    }
+
+    socket.join(code);
+    socket.data.roomCode = code;
+    socket.data.playerId = playerId;
+    socket.data.isHost = false;
+    touchRoom(code);
+
+    const players = getRoomPlayers(code);
+    io.to(code).emit("room:updated", { players });
+
+    let turnOrderPlayers: { id: string; nickname: string }[] | null = null;
+    const activePlayerId = getActiveTurnPlayerId(room);
+
+    if (room.turn_order) {
+      const order: string[] = JSON.parse(room.turn_order);
+      turnOrderPlayers = order
+        .map(pid => db.query("SELECT id, nickname FROM players WHERE id = ?").get(pid) as { id: string; nickname: string } | null)
+        .filter((p): p is { id: string; nickname: string } => p !== null);
+    }
+
+    let currentQuestion = null;
+    let currentVotes: { value: string; playerId: string; nickname: string }[] = [];
+
+    if (room.status === "question") {
+      const q = db.query("SELECT * FROM questions WHERE room_id = ? ORDER BY created_at DESC LIMIT 1").get(code) as any;
+      if (q) {
+        currentQuestion = { id: q.id, type: q.type, prompt: q.prompt, options: JSON.parse(q.options ?? "[]") };
+        currentVotes = db.query(`
+          SELECT r.value, p.id as playerId, p.nickname
+          FROM responses r
+          JOIN players p ON r.player_id = p.id
+          WHERE r.question_id = ?
+          ORDER BY r.submitted_at ASC
+        `).all(q.id) as { value: string; playerId: string; nickname: string }[];
+      }
+    }
+
+    socket.emit("room:rejoined", {
+      roomCode: code,
+      playerId,
+      players,
+      turnOrder: turnOrderPlayers,
+      activePlayerId,
+      currentQuestion,
+      currentVotes,
+    });
+  });
+
   socket.on("room:end", () => {
     const code = socket.data.roomCode;
     if (!code) return;

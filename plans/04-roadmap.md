@@ -103,13 +103,13 @@ Design doc: `plans/design.md`
 
 ---
 
-## Phase 7 — QoL + Bug Fixes 🛠️
+## Phase 7 — QoL + Bug Fixes 🛠️ ✅
 Goal: polish the real-world play experience based on bonfire test findings
 
-- [ ] **BUG-003** Mobile reconnect — persist `roomCode` + `playerId` in `localStorage`, detect socket reconnect, emit `room:sync` to restore player into active game state (question, votes, player list)
-- [ ] **BUG-002** Turn reveal highlight — highlight the first player in the order (index 0) with amber glow, separate from the "YOU" badge which stays on the local player
-- [ ] **QoL** Auto-insert dash in room code input — format entry as `XXXX-XXXX` automatically so players don't have to find the dash character on mobile keyboard
-- [ ] **QoL** Post-question result screen — after a question settles, show a brief result screen (3–5s or tap to continue) before the next player's turn begins, so players can absorb the outcome
+- [x] **BUG-003** Mobile reconnect — `socket.on("connect")` now always calls `rejoinSession()` unconditionally; backend `room:player-rejoin` restores player into active game state
+- [x] **BUG-002** Turn reveal highlight — index 0 player gets `.first` class (amber glow + "FIRST" badge), separate from "YOU" badge on local player
+- [x] **QoL** Auto-insert dash in room code input — `oninput` handler formats entry as `XXXX-XXXX` automatically
+- [x] **QoL** Post-question result screen — 3s overlay after question settles showing settled option + vote breakdown; tap to dismiss early; picker held until dismissed
 
 ---
 
