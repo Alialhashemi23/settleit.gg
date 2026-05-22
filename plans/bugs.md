@@ -6,30 +6,24 @@
 
 ### BUG-004 — Phone lock/home screen breaks lobby connection, shows zero players
 
-**Status:** Open  
+**Status:** Resolved — fixed 2026-05-22  
 **Found:** 2026-05-22, real-world mobile test  
 **Severity:** High — players re-enter an empty ghost lobby on return
 
 **Description:**  
-When a player locks their phone screen or navigates to the home screen while in the pre-game lobby, then returns, their socket connection breaks. The lobby shows zero players even though others are still connected. The room code is visible but state is fully desynced — the player appears to be alone in their own copy of the lobby.
+When a player locks their phone screen or navigates to the home screen while in the pre-game lobby, then returns, their socket connection breaks. The lobby shows zero players even though others are still connected.
 
-**How it differs from BUG-003:**  
-BUG-003 affected the in-game state (active questions, votes, turn order) and was fixed in Phase 7 by wiring `room:player-rejoin` to restore in-game state. The lobby phase (before `game:start`) is a different code path: there is no equivalent full-state restore for the lobby. On reconnect, `room:player-rejoin` fires and the backend re-adds the player and broadcasts `room:updated` — but if the play page component re-mounted or stores were reset before `room:updated` arrives, the player list never re-renders.
+**Root cause:**  
+On mobile (especially iOS Safari), when the screen locks, the OS **suspends JavaScript execution entirely**. The socket.io heartbeat stops firing from the client. After ~20–45 seconds, the **server** times out the connection and removes the player from the room — but the **client never receives a `disconnect` event** because JS was suspended. When the user unlocks, JS resumes and the socket may still appear "connected" to the client (it doesn't know the server dropped it). Since no `disconnect` → `connect` cycle fires, `rejoinSession()` is never called, and the player is a ghost: not in the socket.io room, not in the DB, receiving no further events.
 
-**Suspected root cause:**  
-The play page may be re-mounting from scratch on reconnect (if `goto('/play/[code]')` fires again), resetting all store state before the rejoin response arrives. Alternatively, the `notInRoom` guard may be triggering during the reconnect window, blanking the UI before the rejoin completes.
+**Fix:**  
+Added a `document.visibilitychange` listener in `play/[code]/+page.svelte`. Whenever the page becomes visible:
+- If `socket.connected === false`: call `socket.connect()` — the `connect` event fires and calls `rejoinSession()` as normal
+- If `socket.connected === true` (but server may have removed us anyway): call `rejoinSession()` proactively
 
-**Reproduction:**
-1. Host creates room on desktop
-2. Player joins on mobile — both see each other in lobby
-3. Player locks phone screen for ~5–10 seconds
-4. Player unlocks and returns to the browser tab
-5. Player's lobby shows 0 players; host's lobby shows correct count
+This covers both the case where socket.io detected the drop and the case where it didn't.
 
-**Fix approach (not yet implemented):**
-- Investigate whether the play page re-mounts on reconnect and resets stores prematurely
-- Confirm `room:player-rejoin` `room:updated` broadcast reaches the play page while it's still mounted
-- Consider including full lobby state (players, room status) in the `room:rejoined` response even when `status === 'lobby'`
+Also fixed: `room:settings-updated` was missing from the `onDestroy` socket cleanup list.
 
 ---
 

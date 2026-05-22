@@ -92,6 +92,18 @@
     }
   }
 
+  // On mobile, JS is suspended when the screen locks. The server times out the
+  // connection and removes the player, but the client never gets a disconnect event.
+  // When the tab becomes visible again, proactively rejoin regardless of socket state.
+  function handleVisibilityChange() {
+    if (document.visibilityState !== 'visible') return;
+    if (!socket.connected) {
+      socket.connect(); // connect event fires → rejoinSession()
+    } else {
+      rejoinSession(); // server may have removed us even though socket looks alive
+    }
+  }
+
   onMount(() => {
     if (!get(roomCode)) {
       const session = getSession();
@@ -102,6 +114,8 @@
         return;
       }
     }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     socket.on("connect_error", () => { connectionLost = true; });
     socket.on("disconnect", () => { connectionLost = true; });
@@ -230,12 +244,13 @@
   });
 
   onDestroy(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     if (revealTimeout) clearTimeout(revealTimeout);
     if (hostTimer) clearInterval(hostTimer);
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
     if (copyTimeout) clearTimeout(copyTimeout);
-    ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
+    ["connect_error","disconnect","connect","room:updated","room:settings-updated","game:started","turn:changed",
      "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","host:disconnected","room:ended","room:rejoined"].forEach(e => socket.off(e));
   });
