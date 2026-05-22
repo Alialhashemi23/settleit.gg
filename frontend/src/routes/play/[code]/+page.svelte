@@ -21,6 +21,16 @@
   let connectionLost = $state(false);
   let showPicker = $state(false);
   let showReveal = $state(false);
+  let copied = $state(false);
+  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function copyLink() {
+    navigator.clipboard.writeText(`https://settleit.gg/join/${code}`).then(() => {
+      copied = true;
+      if (copyTimeout) clearTimeout(copyTimeout);
+      copyTimeout = setTimeout(() => { copied = false; }, 2000);
+    });
+  }
   let revealTimeout: ReturnType<typeof setTimeout> | null = null;
   let countdownSeconds = $state(0);
   let countdownInterval: ReturnType<typeof setInterval> | null = null;
@@ -220,6 +230,7 @@
     if (hostTimer) clearInterval(hostTimer);
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
+    if (copyTimeout) clearTimeout(copyTimeout);
     ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
      "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","host:disconnected","room:ended","room:rejoined"].forEach(e => socket.off(e));
@@ -310,6 +321,9 @@
       {#if $turnOrder.length > 0 && !$currentQuestion && !$questionEnded}
         <span class="turn-pill">{isMyTurn ? "Your turn" : `${activeTurnNickname}'s turn`}</span>
       {/if}
+      <button class="btn-copy-sm {copied ? 'copied' : ''}" onclick={copyLink} title="Copy invite link">
+        {copied ? '✓' : '🔗'}
+      </button>
     </div>
 
     {#if connectionLost}
@@ -456,6 +470,24 @@
   }
 
   .room-code { font-size: 1.1rem; font-weight: 900; color: var(--accent); letter-spacing: 0.08em; }
+
+  .btn-copy-sm {
+    margin-left: auto;
+    padding: 0.25rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s, transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    flex-shrink: 0;
+  }
+
+  .btn-copy-sm:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-copy-sm:active { transform: scale(0.94); }
+  .btn-copy-sm.copied { border-color: var(--success); color: var(--success); }
 
   .turn-pill {
     font-size: 0.8rem;

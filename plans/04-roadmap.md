@@ -140,24 +140,16 @@ Goal: every player can see the full question and vote history during a session, 
 
 ---
 
-## Phase 10 — Shareable Join Links + Copy to Clipboard 🔗
+## Phase 10 — Shareable Join Links + Copy to Clipboard 🔗 ✅
 Goal: make it effortless to invite players — one tap to copy a link, one tap to join
 
-**Context:** Right now the host reads out a room code (e.g. `FIRE-4829`) and players type it manually. This is a friction point, especially on mobile where even with auto-formatting it's an extra step. A direct join link and a copy button removes that entirely.
+**Context:** Right now the host reads out a room code (e.g. `FIRE-4829`) and players type it manually. A direct join link and a copy button removes that friction entirely.
 
-**Design:**
-- The host lobby shows a **"Copy Link"** button (and optionally a secondary "Copy Code" button) next to the room code card
-- Copying puts `https://settleit.gg/join/FIRE-4829` on the clipboard — a full URL players can tap in Discord/iMessage/etc.
-- A new SvelteKit route `/join/[code]` accepts the room code from the URL and redirects to the home page with the code pre-filled in the join form, so players only need to enter their nickname
-- Brief "Copied!" confirmation replaces the button label for ~2 seconds, then resets — no toast library needed
-- The copy button also appears on the play page header (for players who want to share mid-game)
-
-**Implementation:**
-- [ ] Frontend: new route `frontend/src/routes/join/[code]/+page.svelte` — on mount, reads `$page.params.code`, saves it to a store or sessionStorage, and `goto('/')` with the code pre-loaded into the join form
-- [ ] Frontend (`+page.svelte`): detect a pre-loaded code on mount (from the join redirect) and automatically switch to join mode with the code field pre-filled; player just enters nickname and taps Join
-- [ ] Frontend (`host/[code]/+page.svelte`): add "Copy Link" button to the room code card; uses `navigator.clipboard.writeText()` with `https://settleit.gg/join/${code}`; shows "Copied!" for 2s then resets
-- [ ] Frontend (`play/[code]/+page.svelte`): add a small copy icon/button next to the room code in the header for mid-game sharing
-- [ ] No backend changes needed — join links resolve entirely on the frontend
+- [x] Frontend: new route `join/[code]/+page.svelte` — reads `$page.params.code`, shows "Joining..." briefly, then `goto('/?code=FIRE-4829', { replaceState: true })` to redirect home with code in the query string
+- [x] Frontend (`+page.svelte`): `onMount` reads `$page.url.searchParams.get('code')` — if present, pre-fills the code field and switches to join mode so player only needs to enter their nickname
+- [x] Frontend (`host/[code]/+page.svelte`): "🔗 Copy Link" button inside the room code card; `navigator.clipboard.writeText('https://settleit.gg/join/${code}')`, transitions to "✓ Copied!" with green styling for 2s then resets
+- [x] Frontend (`play/[code]/+page.svelte`): small "🔗" icon button pinned to the right of the room header; same clipboard logic and ✓ feedback; for mid-game sharing
+- [x] No backend changes needed — join links resolve entirely on the frontend
 
 ---
 

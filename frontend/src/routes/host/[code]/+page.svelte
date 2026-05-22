@@ -17,6 +17,16 @@
   let connectionLost = $state(false);
   let showPicker = $state(false);
   let showReveal = $state(false);
+  let copied = $state(false);
+  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function copyLink() {
+    navigator.clipboard.writeText(`https://settleit.gg/join/${code}`).then(() => {
+      copied = true;
+      if (copyTimeout) clearTimeout(copyTimeout);
+      copyTimeout = setTimeout(() => { copied = false; }, 2000);
+    });
+  }
   let revealTimeout: ReturnType<typeof setTimeout> | null = null;
   let countdownSeconds = $state(0);
   let countdownInterval: ReturnType<typeof setInterval> | null = null;
@@ -179,6 +189,7 @@
     if (revealTimeout) clearTimeout(revealTimeout);
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
+    if (copyTimeout) clearTimeout(copyTimeout);
     ["connect_error","disconnect","connect","room:updated","game:started","turn:changed",
      "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","room:ended"].forEach(e => socket.off(e));
@@ -289,6 +300,9 @@
           <div class="code-label">Room Code</div>
           <div class="code-big">{code}</div>
           <div class="code-url">settleit.gg</div>
+          <button class="btn-copy-link {copied ? 'copied' : ''}" onclick={copyLink}>
+            {copied ? '✓ Copied!' : '🔗 Copy Link'}
+          </button>
         </div>
 
         <ul class="player-chips">
@@ -502,6 +516,30 @@
   }
 
   .code-url { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.4rem; font-weight: 600; }
+
+  .btn-copy-link {
+    margin-top: 0.875rem;
+    padding: 0.5rem 1.25rem;
+    border-radius: 0.75rem;
+    border: 1.5px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.875rem;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s, transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s;
+  }
+
+  .btn-copy-link:hover { background: rgba(232,131,26,0.08); box-shadow: 0 0 12px var(--accent-alpha); }
+  .btn-copy-link:active { transform: scale(0.96); }
+
+  .btn-copy-link.copied {
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(96, 192, 128, 0.08);
+    box-shadow: 0 0 12px rgba(96,192,128,0.2);
+  }
 
   .content { flex: 1; }
 

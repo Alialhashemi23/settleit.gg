@@ -1,10 +1,18 @@
 <script lang="ts">
+  import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { connect, saveSession, clearSession } from "$lib/socket";
   import { roomCode, players, myPlayerId } from "$lib/stores";
 
-  onMount(() => clearSession());
+  onMount(() => {
+    clearSession();
+    const prefill = $page.url.searchParams.get("code");
+    if (prefill) {
+      code = prefill.toUpperCase();
+      mode = "join";
+    }
+  });
 
   let mode: "none" | "join" | "create" = $state("none");
   let nickname = $state("");
