@@ -6,3 +6,5 @@ node_modules/
 .env.local
 frontend/.svelte-kit/
 frontend/build/
+CLAUDE.md
+.claude/
