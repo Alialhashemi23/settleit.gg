@@ -19,6 +19,7 @@
   let hostTimer: ReturnType<typeof setInterval> | null = null;
   let notInRoom = $state(false);
   let connectionLost = $state(false);
+  let isReconnecting = $state(false);
   let showPicker = $state(false);
   let showReveal = $state(false);
   let copied = $state(false);
@@ -108,6 +109,7 @@
     if (!get(roomCode)) {
       const session = getSession();
       if (session && session.roomCode === code) {
+        isReconnecting = true;
         socket.emit("room:player-rejoin", session);
       } else {
         notInRoom = true;
@@ -120,6 +122,12 @@
     socket.on("connect_error", () => { connectionLost = true; });
     socket.on("disconnect", () => { connectionLost = true; });
     socket.on("connect", () => { connectionLost = false; rejoinSession(); });
+    socket.on("error", ({ message }: any) => {
+      if (message === "room_not_found" || message === "room_ended") {
+        isReconnecting = false;
+        notInRoom = true;
+      }
+    });
     socket.on("room:updated", ({ players: pl }: any) => players.set(pl));
     socket.on("room:settings-updated", ({ presetsEnabled: pe }: any) => presetsEnabled.set(pe));
 
@@ -232,6 +240,7 @@
       if (askedIds?.length) askedPresetIds.set(new Set(askedIds));
       if (typeof presetsEnabledVal === 'boolean') presetsEnabled.set(presetsEnabledVal);
       connectionLost = false;
+      isReconnecting = false;
       notInRoom = false;
     });
 
@@ -250,7 +259,7 @@
     if (countdownInterval) clearInterval(countdownInterval);
     if (resultTimeout) clearTimeout(resultTimeout);
     if (copyTimeout) clearTimeout(copyTimeout);
-    ["connect_error","disconnect","connect","room:updated","room:settings-updated","game:started","turn:changed",
+    ["connect_error","disconnect","connect","error","room:updated","room:settings-updated","game:started","turn:changed",
      "question:new","question:option-added","response:update","question:countdown","question:countdown:cancelled",
      "question:ended","host:disconnected","room:ended","room:rejoined"].forEach(e => socket.off(e));
   });
@@ -369,7 +378,12 @@
           <div class="settled-banner">✅ Settled!</div>
         {/if}
 
-        {#if $turnOrder.length === 0}
+        {#if isReconnecting}
+          <div class="waiting-center">
+            <div class="pulse-dot"></div>
+            <span class="muted">Rejoining room...</span>
+          </div>
+        {:else if $turnOrder.length === 0}
           <div class="waiting-center">
             <div class="pulse-dot"></div>
             <span class="muted">Waiting for host to start...</span>
