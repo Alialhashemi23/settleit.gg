@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 
-export const db = new Database(":memory:");
+export const db = new Database("./settleit.db");
 
 db.run(`
   CREATE TABLE IF NOT EXISTS rooms (
