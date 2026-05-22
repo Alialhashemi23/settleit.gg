@@ -127,10 +127,22 @@ Goal: give players free will — add any response beyond the predetermined optio
 
 ---
 
+## Phase 9 — Player Question History 📜
+Goal: every player can see the full question and vote history during a session, not just the host
+
+**Context:** The host already has a collapsible "Session History" panel showing past questions and their settled options. Players currently have no way to look back — they only see the current question. The `questionHistory` store is already populated client-side on the play page as questions settle, so no new event is needed for players who are present throughout. The main work is building the UI and ensuring rejoining players also receive history.
+
+- [ ] Frontend (`play/[code]/+page.svelte`): add a collapsible "History" toggle at the bottom of the play page, matching the host's existing panel style — shows question prompt, settled option, and full vote breakdown per question
+- [ ] Frontend: history entries are already accumulated in the `questionHistory` store on `question:ended` — no new socket events needed for players who stay connected throughout
+- [ ] Backend (`handlers/room.ts`): update `room:rejoined` response to include past settled questions — query questions + responses from DB for the room, shaped as `{ prompt, settledOption, votes: [{ nickname, value }] }[]`
+- [ ] Frontend: on `room:rejoined`, populate `questionHistory` store from the returned history so reconnecting players see the full session context
+- [ ] Frontend: history panel on play page should be visually identical to the host's (collapsible toggle, question entries with vote bars, settled option highlight) — consider extracting into a shared `HistoryPanel.svelte` component to avoid duplication with the host page
+
+---
+
 ## Backlog (post-bonfire, if it gets traction)
 - Player avatars / emoji selection
 - Reaction system during vote reveal
-- Session history / replay
 - Custom question pack builder
 - Redis adapter for horizontal scaling
 
