@@ -271,27 +271,22 @@ Goal: give the host control over whether the game uses the preset pool, and let 
 ## Phase 13 — Docker + Auto-Deploy Pipeline 🐳
 Goal: replace dev server setup with production Docker containers and a hands-off auto-deploy pipeline triggered by git push
 
-**Context:** The app is currently hosted using `bun run dev` (backend, port 3001) and `npm run dev` (frontend, port 5173) routed through a Cloudflare Tunnel. This works but requires open terminal windows and manual restarts. Docker gives production-optimized builds (minified frontend, no Vite overhead), automatic container restart on crash, and an auto-deploy watcher that rebuilds and redeploys on every push to `main` — so changes go live without touching the server.
+**Context:** The app currently runs as dev servers (`bun run dev` / `npm run dev`) routed through Cloudflare Tunnel. Docker gives production-optimized builds, automatic restart on crash, and a git-push-to-deploy pipeline so changes go live without touching the server.
 
-**Order of operations (must be done in this order):**
-1. Docker switch — update config, get containers running
-2. Auto-deploy watcher — polls git, rebuilds on new commits
-3. CLAUDE.md runbook updated with live pipeline commands
+**Code changes (done — already pushed):**
+- [x] `docker-compose.yml`: added SQLite volume mount `./backend/settleit.db:/app/settleit.db` so DB persists across container rebuilds
+- [x] `scripts/autodeploy.ps1`: PowerShell watcher — polls `git fetch` every 2 minutes, detects new commits on `main`, runs `git pull && docker compose up --build -d`. Logs to `scripts/autodeploy.log`.
 
-**docker-compose.yml changes needed:**
-- [ ] Add SQLite volume mount: `./backend/settleit.db:/app/settleit.db` so the DB persists across container rebuilds
-- [ ] Verify `VITE_BACKEND_URL=https://api.settleit.gg` build arg is correct
-- [ ] Verify `FRONTEND_ORIGIN=https://settleit.gg` CORS setting is correct
-- [ ] Verify Cloudflare Tunnel routes: `settleit.gg → localhost:3000` (frontend), `api.settleit.gg → localhost:3001` (backend)
-
-**Auto-deploy watcher:**
-- [ ] PowerShell script that polls `git fetch` every 2 minutes, detects new commits on `main`, runs `git pull && docker compose up --build -d`
-- [ ] Set up as Windows Task Scheduler job or PM2 process (requires admin one-time)
-- [ ] See `CLAUDE.md` (local, gitignored) for the exact script
+**Manual steps (user does these — requires physical access + admin for step 5):**
+- [ ] Create `.env` from `.env.example`, fill in `CLOUDFLARE_TUNNEL_TOKEN`
+- [ ] Stop standalone cloudflared process (docker-compose manages it now)
+- [ ] Update Cloudflare Zero Trust dashboard ingress: `settleit.gg → http://frontend:3000`, `api.settleit.gg → http://backend:3001` (service names, not localhost — cloudflared runs inside Docker network)
+- [ ] Run `docker compose up --build -d`, verify all 3 services are Up
+- [ ] Set up `scripts/autodeploy.ps1` as Windows Task Scheduler job (admin required — Claude can do this step with approval)
 
 **Operational notes:**
-- See local `CLAUDE.md` for full runbook — commands, how to manage containers, how to roll back, etc.
-- `CLAUDE.md` is gitignored — do not commit (contains server-specific paths and pipeline details)
+- See local `CLAUDE.md` for full runbook — step-by-step switch instructions, day-to-day docker commands, rollback, log tailing, scheduled task management
+- `CLAUDE.md` is gitignored — do not commit
 
 ---
 
