@@ -24,7 +24,7 @@ while ($true) {
         $remote = git -C $RepoPath rev-parse origin/main
 
         if ($local -ne $remote) {
-            Log "New commits detected ($($local.Substring(0,7)) → $($remote.Substring(0,7))) — deploying..."
+            Log "New commits detected ($($local.Substring(0,7)) -> $($remote.Substring(0,7))) -- deploying..."
             git -C $RepoPath pull
             docker compose -f $ComposePath up --build -d
             Log "Deploy complete."
