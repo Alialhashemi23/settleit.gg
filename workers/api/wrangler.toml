@@ -16,6 +16,9 @@ database_name = "settleit"
 database_id = "replace-with-real-id"
 migrations_dir = "migrations"
 
+[observability]
+enabled = true
+
 [triggers]
 crons = ["*/15 * * * *"]
 

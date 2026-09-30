@@ -365,7 +365,20 @@ export class RoomDO extends DurableObject<Env> {
     return `${m?.status}|${members}|${r?.state ?? ""}`;
   }
 
-  private async dealNext(meta: Meta, eligible: string[], now: number): Promise<boolean> {
+  private dealing: Promise<boolean> | null = null;
+
+  /**
+   * Deal the next question. Building the queue can await D1, and the object's
+   * input gate reopens during that await, so overlapping callers share one
+   * in-flight deal and re-check for an open round before inserting.
+   */
+  private dealNext(meta: Meta, eligible: string[], now: number): Promise<boolean> {
+    if (this.dealing) return this.dealing;
+    this.dealing = this.dealNextNow(meta, eligible, now).finally(() => { this.dealing = null; });
+    return this.dealing;
+  }
+
+  private async dealNextNow(meta: Meta, eligible: string[], now: number): Promise<boolean> {
     let ballot: Ballot | null = null;
     const custom = this.ctx.storage.sql.exec("SELECT id, prompt, options FROM custom_queue WHERE dealt = 0 ORDER BY seq LIMIT 1").toArray()[0];
     if (custom) {
@@ -373,8 +386,9 @@ export class RoomDO extends DurableObject<Env> {
       const opts = (JSON.parse(custom.options as string) as string[]).map((t, i): BallotOption => ({ id: `o${i + 1}`, text: t }));
       ballot = { questionId: null, versionId: null, prompt: custom.prompt as string, options: opts, tags: [], spoiler: false, variant: true, source: "custom" };
     } else {
-      const dealt = new Set(this.ctx.storage.sql.exec("SELECT question_id FROM dealt").toArray().map((r) => r.question_id as string));
       const queue = await this.questionQueue(meta);
+      if (this.currentRound()) return true; // another event dealt while we awaited
+      const dealt = new Set(this.ctx.storage.sql.exec("SELECT question_id FROM dealt").toArray().map((r) => r.question_id as string));
       const next = queue.find((q) => !dealt.has(q.id));
       if (!next) return false;
       this.ctx.storage.sql.exec("INSERT OR IGNORE INTO dealt (question_id) VALUES (?)", next.id);
