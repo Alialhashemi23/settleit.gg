@@ -58,9 +58,9 @@ export function describeOutcome(outcome: Outcome, options: readonly BallotOption
     case "no_votes":
       return "Nobody voted.";
     case "unanimous":
-      return `Unanimous: all ${outcome.total} picked ${name(lead!)}.`;
+      return `Unanimous: all ${outcome.total} picked ${name(lead!)}`;
     case "majority":
-      return `${outcome.counts[lead!]} of ${outcome.total} picked ${name(lead!)}.`;
+      return `${outcome.counts[lead!]} of ${outcome.total} picked ${name(lead!)}`;
     case "leading":
       return `${name(lead!)} leads with ${outcome.counts[lead!]} of ${outcome.total}. No majority.`;
     case "tie":

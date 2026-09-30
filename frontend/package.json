@@ -11,7 +11,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"deploy": "vite build && wrangler deploy",
-		"dev:cf": "vite build && wrangler dev"
+		"dev:cf": "vite build && wrangler dev",
+		"e2e": "node e2e/smoke.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/kit": "^2.57.0",

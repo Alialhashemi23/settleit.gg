@@ -1,0 +1,10 @@
+# Copy to .dev.vars for local development (wrangler dev reads it; never commit .dev.vars).
+# Generate real values with: openssl rand -base64 32
+SESSION_SECRET=dev-session-secret-change-me
+ADMIN_SESSION_SECRET=dev-admin-secret-change-me
+# Comma-separated GitHub logins allowed into /admin
+ADMIN_GITHUB_LOGINS=
+# Optional: GitHub OAuth app for admin sign-in
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+PUBLIC_ORIGIN=http://localhost:5173

@@ -7,6 +7,9 @@ export { RoomDO } from "./room";
 
 async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
+  if (!env.SESSION_SECRET || !env.ADMIN_SESSION_SECRET) {
+    throw new HttpError(500, "not_configured", "SESSION_SECRET and ADMIN_SESSION_SECRET must be set (wrangler secret put, or .dev.vars locally).");
+  }
   if (!url.pathname.startsWith("/api/")) throw new HttpError(404, "not_found");
   if (url.pathname === "/api/health") return json({ ok: true, env: env.ENVIRONMENT });
   if (url.pathname === "/api/session" && req.method === "GET") {

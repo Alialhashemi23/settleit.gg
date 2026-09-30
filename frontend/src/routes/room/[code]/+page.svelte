@@ -290,7 +290,7 @@
 								{@const n = res.final.counts[o.id] ?? 0}
 								{@const names = Object.entries(res.finalVotes).filter(([, v]) => v.optionId === o.id).map(([a]) => nameOf(a))}
 								<div class="tally">
-									<div class="row spread"><span class="opt-text" class:lead={res.final.leaders.includes(o.id)}>{o.text}</span><span class="dim small">{n}{#if res.revoteHappened && (res.initial.counts[o.id] ?? 0) !== n} <span class="tiny">(was {res.initial.counts[o.id] ?? 0})</span>{/if}</span></div>
+									<div class="row spread"><span class="opt-text" class:lead={res.final.leaders.includes(o.id)}>{o.text}</span><span class="dim small">{n}{#if res.revoteHappened && (res.initial.counts[o.id] ?? 0) !== n}&nbsp;<span class="tiny">(was {res.initial.counts[o.id] ?? 0})</span>{/if}</span></div>
 									<div class="bar-track"><div class="bar-fill" class:win={res.final.leaders.includes(o.id)} class:dim={!res.final.leaders.includes(o.id)} style={`width:${res.final.total ? (n / res.final.total) * 100 : 0}%`}></div></div>
 									{#if names.length}<span class="opt-names">{names.join(', ')}</span>{/if}
 								</div>

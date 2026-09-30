@@ -13,3 +13,5 @@ frontend/.svelte-kit/
 frontend/.wrangler/
 workers/*/.wrangler/
 *.tsbuildinfo
+.dev.vars
+frontend/e2e/out/
