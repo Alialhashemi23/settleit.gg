@@ -1,7 +1,7 @@
 import { env, runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_TIMING, ROOM_LIFECYCLE } from "@settleit/core";
-import { Client, roomStub, startedRoom } from "./helpers";
+import { Client, flushExports, roomStub, startedRoom } from "./helpers";
 
 const T = DEFAULT_TIMING;
 
@@ -133,6 +133,7 @@ describe("room lifecycle", () => {
     expect(s.round!.roundNumber).toBe(2);
     expect(s.round!.phase).toBe("vote");
 
+    expect(await flushExports(code)).toBe(0);
     const outcomes = await env.DB.prepare("SELECT * FROM round_outcome WHERE room_code = ?").bind(code).all();
     expect(outcomes.results.length).toBe(1);
     expect(outcomes.results[0]).toMatchObject({ outcome_kind: "majority", total: 3, variant: 0, version_id: round.ballot.versionId });
@@ -162,6 +163,7 @@ describe("room lifecycle", () => {
     expect(s.round!.phase).toBe("verdict");
     expect(s.round!.result!.final.kind).toBe("unanimous");
     expect(s.round!.result!.changedMinds).toEqual([snapshot.me.actorId]);
+    await flushExports(code);
     const contribs = await env.DB.prepare("SELECT option_id FROM contribution WHERE version_id = ?").bind(round.ballot.versionId).all<{ option_id: string }>();
     expect(contribs.results.map((c) => c.option_id)).toEqual(["o2", "o2", "o2"]);
 
@@ -172,6 +174,7 @@ describe("room lifecycle", () => {
     const sk = await ben!.command(code, { type: "request_skip", roundId: s2.round!.roundId });
     expect(sk.body.snapshot.round!.phase).toBe("verdict");
     expect(sk.body.snapshot.round!.result!.skipped).toBe(true);
+    await flushExports(code);
     const outcomes = await env.DB.prepare("SELECT COUNT(*) AS n FROM round_outcome WHERE room_code = ?").bind(code).first<{ n: number }>();
     expect(outcomes?.n).toBe(1);
   });
@@ -189,6 +192,7 @@ describe("room lifecycle", () => {
     expect(dup.body.snapshot.round!.ballot.options.length).toBe(round.ballot.options.length + 1);
     expect(dup.body.snapshot.round!.phase).toBe("discuss"); // both voted → closed early
     await tick(T.discussMs + T.verdictMs + 20, code);
+    await flushExports(code);
     const rows = await env.DB.prepare("SELECT variant, version_id FROM round_outcome WHERE room_code = ?").bind(code).all();
     expect(rows.results[0]).toMatchObject({ variant: 1, version_id: null });
     const contribs = await env.DB.prepare("SELECT COUNT(*) AS n FROM contribution WHERE version_id = ?").bind(round.ballot.versionId).first<{ n: number }>();
@@ -239,6 +243,7 @@ describe("room lifecycle", () => {
     await tick(ROOM_LIFECYCLE.idlePauseExpiryMs + 1000, code);
     const res = await ana!.json<{ error?: string; snapshot?: { status: string } }>(`/api/rooms/${code}/snapshot`);
     expect(res.body.snapshot?.status).toBe("expired");
+    await flushExports(code);
     const reg = await env.DB.prepare("SELECT status FROM room_registry WHERE code = ?").bind(code).first<{ status: string }>();
     expect(reg?.status).toBe("expired");
   });

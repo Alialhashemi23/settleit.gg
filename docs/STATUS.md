@@ -5,7 +5,7 @@ Branch `rebuild/v2-cloudflare`, 2026-09-30. Maps the [build plan](SETTLEIT-BUILD
 | Slice | State | Notes |
 | --- | --- | --- |
 | 0 Baseline | Done | Old stack archived in `legacy/`; docs imported; bun workspace; baseline had one pre-existing type error (join page) now gone with the rewrite |
-| 1 Hosting spike | Code done, deploy pending | DO SQLite state survives `ctx.abort()` in tests; D1 migrations apply; service-binding forwarding written but only the vite-proxy equivalent was exercised. Real hosted/mobile check and cost measurement still needed (`docs/DEPLOYMENT.md`) |
+| 1 Hosting spike | Code done, deploy pending | DO SQLite state survives `ctx.abort()` in tests; D1 migrations apply; service-binding forwarding (HTTP and WebSocket 101) verified with both Workers under workerd and a scripted browser; exports never block gameplay and catch up exactly once after a simulated D1 outage. Real hosted/mobile check and cost measurement still needed (`docs/DEPLOYMENT.md`) |
 | 2 One group round | Done | Pure rules in `packages/core`; unified room screen; fixed eligibility; timeouts; no creator special case; idempotent commands |
 | 3 Casual session | Done | Category mix, seeded no-repeat queue stored per room, ready/skip/more-time, pause under two active players, private custom questions, write-ins as private variants, recap + awards, 30-minute idle expiry, outbox export |
 | 4 Daily challenge | Done | Deterministic schedule 4 days ahead, locked opinion+prediction, 20-person threshold, provisional split, idempotent versioned settlement, ungraded days, late answers, share links enforced server-side, history reset |
@@ -22,5 +22,6 @@ Branch `rebuild/v2-cloudflare`, 2026-09-30. Maps the [build plan](SETTLEIT-BUILD
 - Rate limiting for room creation/joins is per-isolate and best effort.
 - Guest identity is a signed cookie; clearing site data creates a new player, as the manifesto accepts.
 - Visitors are counted from client `page_view` events, so ad blockers undercount.
-- The service-binding WebSocket path must be confirmed on real Cloudflare; the fallback is a `/api/*` route on the API Worker.
+- The service-binding WebSocket path works under workerd locally; confirm once on the hosted platform. The fallback is a `/api/*` route on the API Worker.
+- `@sveltejs/adapter-cloudflare` overwrites the file named by `main`; the adapter reads `frontend/wrangler.build.toml` for that reason. See `docs/DEPLOYMENT.md`.
 - Admin sign-in needs a GitHub OAuth app; until then `/admin` shows a configuration notice.

@@ -6,10 +6,11 @@ const config = {
 		runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true)
 	},
 	kit: {
-		// Cloudflare Workers with static assets. The generated _worker.js is wrapped by
+		// Cloudflare Workers with static assets. The adapter reads wrangler.build.toml (no main)
+		// so it never overwrites worker.ts. The generated _worker.js is wrapped by
 		// worker.ts, which forwards /api/* (including WebSocket upgrades) to the
 		// API Worker through a service binding before SvelteKit ever sees the request.
-		adapter: adapter({ routes: { include: ['/*'], exclude: ['<all>'] } })
+		adapter: adapter({ config: 'wrangler.build.toml' })
 	}
 };
 

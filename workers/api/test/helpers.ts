@@ -67,6 +67,12 @@ export function roomStub(code: string) {
   return env.ROOMS.get(env.ROOMS.idFromName(code));
 }
 
+/** Exports run in the background; tests call this before asserting on D1. */
+export async function flushExports(code: string): Promise<number> {
+  const r = await roomStub(code).fetch("https://room/export-sweep", { method: "POST" });
+  return ((await r.json()) as { pending: number }).pending;
+}
+
 /** Two players create/join a room and both ready up, which deals the first question. */
 export async function startedRoom(names = ["ana", "ben", "cy"]) {
   const clients = names.map((n) => new Client(n));

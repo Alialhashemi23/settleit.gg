@@ -2,7 +2,7 @@
 // Run both dev servers first (see README), then: bun run e2e   (needs: bun add -d playwright + npx playwright install chromium)
 import { chromium } from 'playwright';
 
-const BASE = 'http://127.0.0.1:5173';
+const BASE = process.env.E2E_BASE ?? 'http://127.0.0.1:5173';
 const browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {}) });
 const shots = [];
 import { mkdirSync } from 'node:fs';

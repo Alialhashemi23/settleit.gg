@@ -100,7 +100,7 @@ export class RoomDO extends DurableObject<Env> {
         case "/create": return await this.handleCreate(req, now);
         case "/exists": return json({ exists: this.loadMeta() !== null && this.loadMeta()!.status !== "expired" });
         case "/join": return await this.handleJoin(req, now);
-        case "/snapshot": return this.handleSnapshot(url, now);
+        case "/snapshot": return await this.handleSnapshot(url, now);
         case "/command": return await this.handleCommand(req, now);
         case "/recap": return this.handleRecap(url, now);
         case "/ws": return this.handleWebSocket(req, url, now);
@@ -152,7 +152,7 @@ export class RoomDO extends DurableObject<Env> {
     return json({ snapshot: this.snapshotFor(body.actorId, now) });
   }
 
-  private handleSnapshot(url: URL, now: number): Response {
+  private async handleSnapshot(url: URL, now: number): Promise<Response> {
     const meta = this.loadMeta();
     if (!meta) throw new HttpError(404, "room_not_found", "That room doesn't exist or has expired.");
     const actorId = url.searchParams.get("actor") ?? "";
@@ -161,7 +161,7 @@ export class RoomDO extends DurableObject<Env> {
     if (meta.status === "expired") return json({ snapshot: this.snapshotFor(actorId, now) });
     this.touch(actorId, now);
     // Snapshot requests also settle overdue deadlines; the alarm is not the only clock.
-    this.ctx.waitUntil(this.afterChange(now));
+    await this.afterChange(now);
     return json({ snapshot: this.snapshotFor(actorId, now) });
   }
 
@@ -347,7 +347,9 @@ export class RoomDO extends DurableObject<Env> {
 
     if (this.stateFingerprint() !== before || meta.status === "expired") meta.version += 1;
     this.saveMeta(meta);
-    await this.drainOutbox(now);
+    // Exports go to D1 in the background: a slow or failing D1 delays public
+    // totals, never the room. The outbox rows are already durable.
+    this.ctx.waitUntil(this.drainOutbox(now).catch((e) => console.warn("drain failed", e)));
     this.broadcast(now);
     if (meta.status === "expired") {
       for (const ws of this.ctx.getWebSockets()) { try { ws.send(JSON.stringify({ kind: "expired" } satisfies ServerPush)); ws.close(1000, "expired"); } catch { /* ignore */ } }
@@ -358,7 +360,9 @@ export class RoomDO extends DurableObject<Env> {
   private stateFingerprint(): string {
     const m = this.loadMeta();
     const r = this.ctx.storage.sql.exec("SELECT state FROM round WHERE completed = 0 ORDER BY round_number DESC LIMIT 1").toArray()[0];
-    return `${m?.status}|${r?.state ?? ""}`;
+    const members = this.ctx.storage.sql.exec("SELECT actor_id, nickname, ready, left FROM member ORDER BY actor_id").toArray()
+      .map((x) => `${x.actor_id}:${x.nickname}:${x.ready}:${x.left}`).join(",");
+    return `${m?.status}|${members}|${r?.state ?? ""}`;
   }
 
   private async dealNext(meta: Meta, eligible: string[], now: number): Promise<boolean> {
@@ -437,8 +441,16 @@ export class RoomDO extends DurableObject<Env> {
     return this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM outbox WHERE done = 0").toArray()[0]!.n as number;
   }
 
+  private draining: Promise<void> | null = null;
+
   /** Deliver due outbox items in order. Local acknowledgement happens only after D1 confirms. */
-  private async drainOutbox(now: number): Promise<void> {
+  private drainOutbox(now: number): Promise<void> {
+    if (this.draining) return this.draining;
+    this.draining = this.drainOutboxNow(now).finally(() => { this.draining = null; });
+    return this.draining;
+  }
+
+  private async drainOutboxNow(now: number): Promise<void> {
     const rows = this.ctx.storage.sql.exec("SELECT seq, event_id, payload, attempts, next_attempt_at FROM outbox WHERE done = 0 AND next_attempt_at <= ? ORDER BY seq", now).toArray() as unknown as OutboxRow[];
     for (const row of rows) {
       const ev = JSON.parse(row.payload) as RoomExportEvent;

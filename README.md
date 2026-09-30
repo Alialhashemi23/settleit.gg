@@ -27,7 +27,7 @@ cd workers/api && bunx wrangler d1 migrations apply settleit --local && bun run 
 cd frontend && bun run dev
 ```
 
-Open http://localhost:5173 in two browser profiles (or a phone on the same network) to play a room.
+Open http://localhost:5173 in two browser profiles (or a phone on the same network) to play a room. For a production-shaped run (both Workers under workerd with the real service binding) see `docs/DEPLOYMENT.md` → Local development.
 
 ## Test
 

@@ -12,7 +12,9 @@ Status: written 2026-09-30 alongside the rebuild. Nothing in this file has been 
 | Library, daily, stats, telemetry, admin | D1 database `settleit` | `workers/api/migrations/` |
 | Upkeep | Cron trigger every 15 minutes on `settleit-api` | `workers/api/src/maintenance.ts` |
 
-Browsers only ever talk to `settleit-web`. It forwards `/api/*` (including WebSocket upgrades) to `settleit-api` over a service binding, so cookies stay same-origin and the API Worker is not reachable directly. If the service-binding path misbehaves on real Cloudflare (the one thing this session could not test), the fallback is a route `settleit.gg/api/*` pointed at `settleit-api`; the frontend needs no change for that.
+Browsers only ever talk to `settleit-web`. It forwards `/api/*` (including WebSocket upgrades) to `settleit-api` over a service binding, so cookies stay same-origin and the API Worker is not reachable directly. This path was verified under workerd with both Workers running in one `wrangler dev` session (see "Local development"): WebSocket upgrades come back as 101 through the gateway and the full browser flow passes. If it ever misbehaves on the hosted platform, the fallback is a route `settleit.gg/api/*` pointed at `settleit-api`; the frontend needs no change for that.
+
+**Trap to know about:** `@sveltejs/adapter-cloudflare` writes its generated worker to whatever `main` points at in the wrangler config it reads. That is why `frontend/svelte.config.js` gives the adapter its own `wrangler.build.toml` (whose `main` is the adapter's own output file) while `frontend/wrangler.toml` (dev and deploy) points `main` at `worker.ts`, the gateway that imports the generated file. If `worker.ts` ever turns into a 100+ line generated file after a build, this wiring got undone.
 
 ## One-time setup
 
@@ -44,13 +46,25 @@ Both Workers get a `*.workers.dev` URL. Use the web Worker's URL for the phone p
 
 ## Local development
 
+Fast loop (Vite HMR, `/api` proxied to the API Worker):
+
 ```bash
 cp workers/api/.dev.vars.example workers/api/.dev.vars
 cd workers/api && bunx wrangler d1 migrations apply settleit --local && bun run dev   # http://localhost:8787
 cd frontend && bun run dev                                                              # http://localhost:5173, proxies /api
 ```
 
-`bun run test` at the root runs the rules, content and Worker suites (the Worker suite runs inside workerd with real Durable Objects and D1).
+Production-shaped loop (both Workers under workerd, real service binding, built site):
+
+```bash
+cd frontend && bun run build && cd ..
+workers/api/node_modules/.bin/wrangler dev -c frontend/wrangler.toml -c workers/api/wrangler.toml \
+  --port 8788 --persist-to workers/api/.wrangler/state          # http://localhost:8788
+```
+
+`--persist-to` must point at the same state directory the local migrations wrote to, otherwise D1 is empty and `/api/daily` fails with "no such table".
+
+`bun run test` at the root runs the rules, content and Worker suites (the Worker suite runs inside workerd with real Durable Objects and D1, including a forced eviction and a simulated D1 outage). `cd frontend && bun run e2e` drives a browser through either loop (`E2E_BASE=http://127.0.0.1:8788` for the workerd one; needs `playwright` installed).
 
 ## Cutover from the old stack
 

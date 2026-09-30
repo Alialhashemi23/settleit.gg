@@ -34,7 +34,7 @@ If people describe it as "a poll with no payoff", revisit the verdict/reveal and
 
 ## What this session already verified
 
-- 65 automated tests: rules engine (31), content audit (8), Worker in workerd with real Durable Objects and D1 (26).
-- A scripted browser run through the local dev stack (vite proxy → wrangler dev): create, three joins, ready-up, live named votes, early close, discussion, a fourth late joiner blocked until the next question, offline/online recovery, majority revote, unanimous verdict with "Plot twist", next question dealt with the late joiner eligible, recap, daily submission, topics page, admin gate.
+- 66 automated tests: rules engine (31), content audit (8), Worker in workerd with real Durable Objects and D1 (27), including a forced Durable Object eviction and a simulated D1 outage where the room keeps dealing and exports catch up exactly once.
+- A scripted browser run (`frontend/e2e/smoke.mjs`) passed twice: once through the vite proxy, once with both Workers running under workerd behind the real service binding (WebSocket upgrades answered 101 through the gateway). Flow: create, three joins, ready-up, live named votes, early close, discussion, a fourth late joiner blocked until the next question, offline/online recovery, majority revote, unanimous verdict with "Plot twist", next question dealt with the late joiner eligible, recap, daily submission, topics page, admin gate.
 
-Not verified here: a real Cloudflare deployment, phone OS suspension, and a real D1 outage.
+Not verified here: a real Cloudflare deployment and phone OS suspension.
