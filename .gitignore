@@ -8,3 +8,8 @@ frontend/.svelte-kit/
 frontend/build/
 CLAUDE.md
 .claude/
+.wrangler/
+frontend/.svelte-kit/
+frontend/.wrangler/
+workers/*/.wrangler/
+*.tsbuildinfo
