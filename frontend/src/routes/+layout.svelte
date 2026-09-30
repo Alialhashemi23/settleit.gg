@@ -1,6 +1,10 @@
 <script lang="ts">
+	import '$lib/app.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import { afterNavigate } from '$app/navigation';
+	import { trackPageView } from '$lib/telemetry';
 	let { children } = $props();
+	afterNavigate((nav) => trackPageView(nav.to?.url.pathname ?? '/'));
 </script>
 
 <svelte:head>
@@ -8,7 +12,7 @@
 	<link rel="icon" href={favicon} />
 	<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 	<link rel="manifest" href="/manifest.json" />
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 	<meta name="theme-color" content="#e8831a" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -19,37 +23,3 @@
 </svelte:head>
 
 {@render children()}
-
-<style>
-	:global(:root) {
-		--bg: #0d0905;
-		--surface: #1a1208;
-		--surface-raised: #241a0e;
-		--border: #3d2e1a;
-		--accent: #e8831a;
-		--accent-alpha: rgba(232, 131, 26, 0.28);
-		--accent-hover: #f09030;
-		--text: #f5ede0;
-		--text-muted: #a08060;
-		--text-dim: #5c4433;
-		--success: #60c080;
-		--error: #e05050;
-	}
-
-	:global(*, *::before, *::after) {
-		box-sizing: border-box;
-	}
-
-	:global(body) {
-		margin: 0;
-		background: var(--bg);
-		color: var(--text);
-		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-		-webkit-font-smoothing: antialiased;
-	}
-
-	:global(button) {
-		font-family: inherit;
-		touch-action: manipulation;
-	}
-</style>
