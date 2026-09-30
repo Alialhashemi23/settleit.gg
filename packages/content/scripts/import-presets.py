@@ -2,7 +2,7 @@
 writes src/catalog.ts. Re-run only if the review decisions change."""
 import re, json, pathlib
 root = pathlib.Path(__file__).resolve().parents[3]
-src = (root / "frontend/src/lib/presets.ts").read_text()
+src = (root / "legacy/presets.ts").read_text()
 rows = re.findall(r'\{ id: "(q\d+)", prompt: "((?:[^"\\]|\\.)*)", options: \[(.*?)\], tags: \[(.*?)\] \}', src)
 assert len(rows) == 210, len(rows)
 

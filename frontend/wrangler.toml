@@ -1,0 +1,19 @@
+name = "settleit-web"
+main = "worker.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# SvelteKit build output (adapter-cloudflare). Run `bun run build` first.
+[assets]
+directory = ".svelte-kit/cloudflare"
+binding = "ASSETS"
+
+# Same-origin forwarding to the API Worker. Deploy workers/api first.
+[[services]]
+binding = "API"
+service = "settleit-api"
+
+# Production routing for the custom domain; adjust once DNS is on Cloudflare.
+# [[routes]]
+# pattern = "settleit.gg"
+# custom_domain = true

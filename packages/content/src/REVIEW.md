@@ -1,6 +1,6 @@
 # Question library review (2026-09-30)
 
-Source: `frontend/src/lib/presets.ts` (210 prompts, ids q001–q210). Stable ids are preserved.
+Source: `legacy/presets.ts` (formerly `frontend/src/lib/presets.ts`) (210 prompts, ids q001–q210). Stable ids are preserved.
 Generated into `catalog.ts` by `scripts/import-presets.py`; decisions live in that script.
 
 | Decision | Ids | Reason |
