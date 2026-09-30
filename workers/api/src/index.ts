@@ -1,19 +1,45 @@
-import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env";
+import { handleRooms } from "./rooms";
+import { getSession, withSessionCookie } from "./auth";
+import { HttpError, errorResponse, json } from "./util";
 
-export class RoomDO extends DurableObject<Env> {
-  constructor(ctx: DurableObjectState, env: Env) {
-    super(ctx, env);
-    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)");
+export { RoomDO } from "./room";
+
+async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(req.url);
+  if (!url.pathname.startsWith("/api/")) throw new HttpError(404, "not_found");
+  if (url.pathname === "/api/health") return json({ ok: true, env: env.ENVIRONMENT });
+  if (url.pathname === "/api/session" && req.method === "GET") {
+    const s = await getSession(req, env, true);
+    return withSessionCookie(json({ actorId: s!.actorId }), s!);
   }
-  async put(k: string, v: string) { this.ctx.storage.sql.exec("INSERT OR REPLACE INTO kv (k,v) VALUES (?,?)", k, v); }
-  async get(k: string) { const r = this.ctx.storage.sql.exec("SELECT v FROM kv WHERE k=?", k).toArray(); return r[0]?.v ?? null; }
-  async abortSelf() { this.ctx.abort("test"); }
+  const rooms = await handleRooms(req, env, url, ctx);
+  if (rooms) return rooms;
+  const { handleDaily } = await import("./daily");
+  const daily = await handleDaily(req, env, url, ctx);
+  if (daily) return daily;
+  const { handleStats } = await import("./stats");
+  const stats = await handleStats(req, env, url);
+  if (stats) return stats;
+  const { handleAdmin } = await import("./admin");
+  const admin = await handleAdmin(req, env, url, ctx);
+  if (admin) return admin;
+  const { handleTelemetry } = await import("./telemetry");
+  const tele = await handleTelemetry(req, env, url, ctx);
+  if (tele) return tele;
+  throw new HttpError(404, "not_found");
 }
 
 export default {
-  async fetch(_req: Request, env: Env): Promise<Response> {
-    await env.DB.prepare("INSERT OR REPLACE INTO spike (id, v) VALUES ('a', 1)").run();
-    return new Response("ok");
+  async fetch(req, env, ctx) {
+    try {
+      return await route(req, env, ctx);
+    } catch (e) {
+      return errorResponse(e);
+    }
+  },
+  async scheduled(_event, env, ctx) {
+    const { runMaintenance } = await import("./maintenance");
+    ctx.waitUntil(runMaintenance(env));
   },
 } satisfies ExportedHandler<Env>;

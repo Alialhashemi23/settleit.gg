@@ -20,5 +20,6 @@ migrations_dir = "migrations"
 crons = ["*/15 * * * *"]
 
 [vars]
+ALLOWED_ORIGINS = "http://localhost:5173"
 ENVIRONMENT = "development"
 ADMIN_GITHUB_LOGINS = ""

@@ -60,7 +60,12 @@ export function findVersion(versionId: string): ResolvedQuestion | null {
  * seed order before shuffling (the shuffle is seeded by the room, see core).
  */
 export function questionsForRoom(categories: readonly string[], excludeSpoilers: boolean): ResolvedQuestion[] {
-  const all = approvedQuestions().filter((q) => !excludeSpoilers || !q.spoiler);
+  return filterForRoom(approvedQuestions(), categories, excludeSpoilers);
+}
+
+/** Same filter over any library (for example one loaded from the database). */
+export function filterForRoom(library: readonly ResolvedQuestion[], categories: readonly string[], excludeSpoilers: boolean): ResolvedQuestion[] {
+  const all = library.filter((q) => q.status === "approved" && (!excludeSpoilers || !q.spoiler));
   const chosen = categories.filter((c) => c !== "mix");
   if (chosen.length === 0) return all;
   const allowed = new Set(chosen.flatMap((c) => CATEGORY_PRESETS.find((p) => p.id === c)?.topics ?? []));

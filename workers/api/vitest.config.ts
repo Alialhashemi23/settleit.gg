@@ -13,6 +13,7 @@ export default defineConfig({
             TEST_MIGRATIONS: migrations,
             SESSION_SECRET: "test-secret",
             ADMIN_SESSION_SECRET: "test-admin-secret",
+            ADMIN_GITHUB_LOGINS: "owner",
           },
         },
       };
