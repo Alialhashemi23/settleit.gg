@@ -15,3 +15,6 @@ workers/*/.wrangler/
 *.tsbuildinfo
 .dev.vars
 frontend/e2e/out/
+selfhost/data/
+scripts/autodeploy.log
+scripts/test-output.txt

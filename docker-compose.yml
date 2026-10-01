@@ -1,0 +1,29 @@
+# Self-hosted v2 behind the existing Cloudflare Tunnel (no Cloudflare Workers account needed).
+# The service is named `frontend` on port 3000 because the tunnel's public hostname routes
+# already point settleit.gg and www.settleit.gg at http://frontend:3000.
+# Secrets live in .env (git-ignored): CLOUDFLARE_TUNNEL_TOKEN, SESSION_SECRET, ADMIN_SESSION_SECRET.
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: selfhost/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      SESSION_SECRET: "${SESSION_SECRET}"
+      ADMIN_SESSION_SECRET: "${ADMIN_SESSION_SECRET}"
+      ADMIN_GITHUB_LOGINS: "${ADMIN_GITHUB_LOGINS:-}"
+      GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
+      GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
+    volumes:
+      - ./selfhost/data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}"
+    depends_on:
+      - frontend

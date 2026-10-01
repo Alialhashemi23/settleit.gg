@@ -1,0 +1,14 @@
+.git
+.claude
+**/node_modules
+**/.wrangler
+**/.svelte-kit
+**/.dev.vars
+.env
+backend
+legacy
+scripts
+selfhost/data
+plans
+docs
+**/.env.local

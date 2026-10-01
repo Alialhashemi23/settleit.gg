@@ -87,3 +87,16 @@ Rollback: delete the custom domain from the Worker, restore the tunnel CNAMEs, s
 ## Cost check
 
 Workers Paid starts at $5/month with 10M requests, plus Durable Object and D1 usage. The architecture doc's sizing example (1,000 group sessions and 10,000 daily attempts a month) stays inside the included allowances for requests and D1 rows, but Durable Object duration is billed while a room is active, so measure after the first week: the Cloudflare dashboard's DO duration and D1 row reads/writes are the two numbers to watch. This session did not measure real usage.
+
+## Interim: self-hosted behind the tunnel (current production, since 2026-10-01)
+
+Until the Cloudflare deploy above happens, v2 runs on the owner's Windows PC with no Workers account:
+
+- `docker-compose.yml` (repo root) builds `selfhost/Dockerfile`: both Workers under workerd via `wrangler dev`, as one service named `frontend` on port 3000, which is where the tunnel's existing `settleit.gg` and `www.settleit.gg` routes already point. `cloudflared` runs alongside it.
+- D1 and Durable Object state persist in `selfhost/data/` (git-ignored). Migrations are applied on every container start.
+- Secrets come from the root `.env` (git-ignored): `CLOUDFLARE_TUNNEL_TOKEN`, `SESSION_SECRET`, `ADMIN_SESSION_SECRET`, and optionally `ADMIN_GITHUB_LOGINS`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. The image sets `ENVIRONMENT=production` and allows the `https://settleit.gg` origins, because behind the tunnel the Worker sees plain-http request URLs.
+- Update: `docker compose up -d --build`. The Task Scheduler job `settleit-autodeploy` runs `scripts/autodeploy.ps1`, which does this whenever `origin/main` has new commits.
+- Known limits: `wrangler dev` is a local emulator, not a hardened server, and cron triggers do not fire, so `runMaintenance` only happens through request-driven paths.
+- Rollback to v1: images `settleitgg-frontend:v1-legacy` and `settleitgg-backend:v1-legacy` are kept on the PC.
+
+The cutover steps above that mention disabling the autodeploy task and stopping the Docker stack apply when moving from this interim setup to Cloudflare.
