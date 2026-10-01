@@ -1,0 +1,14 @@
+{
+  "name": "settleit",
+  "private": true,
+  "workspaces": ["packages/*", "workers/*", "frontend"],
+  "scripts": {
+    "test": "bun run --filter '*' test",
+    "check": "bun run --filter '*' check",
+    "build": "bun run --filter 'frontend' build"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,0 +1,11 @@
+# Read ONLY by @sveltejs/adapter-cloudflare at build time (see svelte.config.js).
+# The adapter writes its generated worker to whatever `main` points at, so this
+# file points at the adapter's own output location. wrangler.toml (used for dev
+# and deploy) points `main` at worker.ts, which wraps that generated file.
+name = "settleit-web"
+main = ".svelte-kit/cloudflare/_worker.js"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = ".svelte-kit/cloudflare"
+binding = "ASSETS"

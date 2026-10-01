@@ -1,0 +1,28 @@
+name = "settleit-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[durable_objects]
+bindings = [{ name = "ROOMS", class_name = "RoomDO" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "settleit"
+database_id = "replace-with-real-id"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "http://localhost:5173"
+ENVIRONMENT = "development"
+ADMIN_GITHUB_LOGINS = ""

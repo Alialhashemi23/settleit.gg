@@ -1,136 +1,53 @@
 # Settle It
 
-A real-time group opinion game built for friend groups. No accounts, no friction — just a room code and a question.
+A party game for 5–8 phones: a question, a vote everyone can see, a beat to argue, an optional revote, a verdict. Alone, a daily "Read the Crowd" challenge with real community results. No accounts, no host screen, no TV.
 
-![settle it demo placeholder](https://placehold.co/900x400/0a0a0a/ff4d00?text=Settle+It)
-
----
-
-## How it works
-
-1. **Host** creates a room and gets a short code like `FIRE-4829`
-2. **Players** join on their phones by entering the code and a nickname
-3. **Host** asks a question — vote mode or free text
-4. Everyone answers live, results update in real-time
-5. Host moves to the next question whenever ready
-
-### Question modes
-
-**Vote** — pick from preset options, watch a live bar chart fill up as votes come in
-
-**Hot Take** *(Phase 2)* — open-ended question, answers appear on screen as players submit them
-
----
+Product direction and architecture live in [`docs/`](docs/): [manifesto](docs/SETTLEIT-MANIFESTO.md), [architecture](docs/SETTLEIT-ARCHITECTURE.md), [build plan](docs/SETTLEIT-BUILD-PLAN.md), [status](docs/STATUS.md), [deployment](docs/DEPLOYMENT.md), [playtest checklist](docs/PLAYTEST.md).
 
 ## Stack
 
 | Layer | Tech |
-|---|---|
-| Frontend | SvelteKit + Svelte 5 |
-| Backend | Bun + Socket.io |
-| Database | SQLite (`bun:sqlite`) |
-| Deployment | Docker Compose |
+| --- | --- |
+| Frontend | SvelteKit / Svelte 5 on Cloudflare Workers (`frontend/`) |
+| Game + data API | Cloudflare Worker with one SQLite-backed Durable Object per room and D1 for global records (`workers/api/`) |
+| Rules | Pure TypeScript, no platform code (`packages/core/`) |
+| Content | Reviewed, versioned question library with stable ids (`packages/content/`) |
+| Old stack | `legacy/` (Bun + Socket.IO + Docker), kept for rollback only |
 
----
-
-## Getting started
-
-### Prerequisites
-
-- [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
-
-### Dev
+## Develop
 
 ```bash
-# Backend (port 3001)
-cd backend
 bun install
-bun run dev
+cp workers/api/.dev.vars.example workers/api/.dev.vars
 
-# Frontend (port 5173)
-cd frontend
-bun install
-bun run dev
+# terminal 1: API on :8787 (local Durable Objects + D1)
+cd workers/api && bunx wrangler d1 migrations apply settleit --local && bun run dev
+
+# terminal 2: site on :5173, proxies /api to :8787
+cd frontend && bun run dev
 ```
 
-Open [localhost:5173](http://localhost:5173) in two tabs — one as host, one as player.
+Open http://localhost:5173 in two browser profiles (or a phone on the same network) to play a room. For a production-shaped run (both Workers under workerd with the real service binding) see `docs/DEPLOYMENT.md` → Local development.
 
-### Docker
+## Test
 
 ```bash
-docker compose up --build
+bun run test     # rules, content audit, and the Worker suite inside workerd
+bun run check    # type checks for every package
 ```
 
-Frontend at `localhost:5173`, backend at `localhost:3001`.
+## Deploy
 
----
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Short version: `wrangler deploy` in `workers/api`, then `bun run build && wrangler deploy` in `frontend`.
 
-## Project structure
+## Layout
 
 ```
-settleit.gg/
-├── backend/
-│   ├── index.ts          # HTTP + WebSocket server entry
-│   ├── db.ts             # SQLite schema + cleanup interval
-│   ├── rooms.ts          # Room and player logic
-│   └── handlers/
-│       ├── room.ts       # room:create, room:join, disconnect handling
-│       ├── question.ts   # question:ask, question:next
-│       └── response.ts   # response:submit, live broadcast
-├── frontend/
-│   └── src/
-│       ├── routes/
-│       │   ├── +page.svelte          # Landing — create or join
-│       │   ├── host/[code]/          # Host view
-│       │   └── play/[code]/          # Player view
-│       └── lib/
-│           ├── socket.ts             # Socket.io client
-│           └── stores.ts             # Svelte stores for room state
-├── docker-compose.yml
-└── plans/                # Design docs and roadmap
+docs/               current design + runbooks
+packages/core/      round engine, outcomes, awards, daily scoring, protocol types
+packages/content/   catalog.ts (205 approved prompts), review log, seed generator
+workers/api/        Worker entry, RoomDO, D1 migrations, daily/stats/admin/telemetry, tests
+frontend/           SvelteKit app; worker.ts forwards /api/* to the API Worker
+legacy/             previous production stack and the original question list
+plans/              historical planning docs (superseded by docs/)
 ```
-
----
-
-## WebSocket events
-
-### Client → Server
-
-| Event | Payload | Description |
-|---|---|---|
-| `room:create` | `{ nickname }` | Host creates a room |
-| `room:join` | `{ roomCode, nickname }` | Player joins a room |
-| `room:rejoin` | `{ roomCode, nickname }` | Host reclaims session after disconnect |
-| `room:end` | — | Host ends the session |
-| `question:ask` | `{ type, prompt, options? }` | Host pushes a question |
-| `question:next` | — | Host ends current question |
-| `response:submit` | `{ questionId, value }` | Player submits a vote or answer |
-
-### Server → Client
-
-| Event | Payload | Description |
-|---|---|---|
-| `room:created` | `{ roomCode }` | Confirms room creation |
-| `room:joined` | `{ roomCode, players }` | Confirms join, sends player list |
-| `room:updated` | `{ players }` | Player joined or left |
-| `room:ended` | — | Session is over |
-| `question:new` | `{ question }` | New question pushed to all |
-| `response:update` | `{ counts, responses }` | Live update as answers come in |
-| `question:ended` | `{ final }` | Host ended the question, final results |
-| `host:disconnected` | `{ deadline }` | Host dropped, reconnect window open |
-| `error` | `{ message }` | Something went wrong |
-
----
-
-## Roadmap
-
-- [x] **Phase 1** — Real-time core: room creation, lobby, vote questions, live results
-- [ ] **Phase 2** — Full game loop: free text mode, question packs, session summary
-- [ ] **Phase 3** — Polish: mobile UI, animations, error states
-- [ ] **Phase 4** — Deploy: Hetzner VPS, Caddy, Cloudflare Tunnel
-
----
-
-## License
-
-MIT
